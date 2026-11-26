@@ -3,6 +3,9 @@
 ## 0.3.0
 - Renamed from Seatbelt to Kneepad (a kneepad is cheap gear that takes the hit so the joint does not). Package, CLI,
   environment variables (`KNEEPAD_*`) and state directory (`~/.kneepad`) changed. Nothing is migrated automatically.
+- macOS fix found by the first real macOS CI run: paths under `/private` (where macOS temp dirs and some projects resolve)
+  were compared against an un-normalised home and cwd, so `rm -rf ~` was allowed in that situation. Home, cwd and target
+  are now normalised together. The simulated-macOS tests are skipped on real Windows, where POSIX paths cannot be modelled.
 - Windows: cmd.exe and PowerShell tokenizer (`winshell.py`), Windows path classification (drive, UNC, case, 8.3 top-level
   names, registry providers), `Remove-Item`/`del`/`rd` handling with snapshots, `-EncodedCommand` decoding, unwrapping of
   `powershell -c`, `cmd /c`, `wsl`, `Start-Process`, `iex`, protected-path writes (profile, hosts, startup folder,
