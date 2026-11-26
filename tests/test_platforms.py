@@ -305,7 +305,18 @@ class TestWindowsWrites(unittest.TestCase):
         self.assertEqual(az.analyze_write_path("c:\\USERS\\ME\\.SSH\\config").action, "ask")
 
 
+@unittest.skipIf(os.name == "nt", "simulates macOS with POSIX paths, which Windows' own path functions cannot process")
 class TestMacOS(unittest.TestCase):
+    def test_home_and_cwd_under_private_are_compared_consistently(self):
+        """GitHub's macOS runners (and many real temp dirs) live under /private/var; the prefix must not break matching."""
+        home, cwd = "/private/var/folders/ab/T/home", "/private/var/folders/ab/T/proj"
+        az = Analyzer(cwd=cwd, home=home, env={}, platform="darwin")
+        self.assertEqual(az.analyze_shell("rm -rf ~").action, "deny")
+        self.assertEqual(az.analyze_shell("rm -rf " + home).action, "deny")
+        self.assertIn("fs-rm-ancestor-of-cwd", {f.rule_id for f in az.analyze_shell("rm -rf .").findings})
+        self.assertIn("fs-rm-credentials-dir", {f.rule_id for f in az.analyze_shell("rm -rf ~/.ssh").findings})
+        self.assertNotIn("fs-rm-ancestor-of-cwd", {f.rule_id for f in az.analyze_shell("rm -rf build").findings})
+
     def test_system_paths_and_case(self):
         self.assertEqual(mac("rm -rf /Library")[0], "deny")
         self.assertEqual(mac("rm -rf /System/Library/Foo")[0], "ask")
