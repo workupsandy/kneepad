@@ -499,17 +499,24 @@ class Analyzer:
             return winshell.classify(p, self.cwd, self.home)
         if p == "/":
             return "catastrophic"
-        # macOS keeps /etc, /var and /tmp under /private.
-        if p == "/private" or p.startswith("/private/"):
-            p = p[len("/private"):] or "/"
-            if p == "/":
-                return "catastrophic"
+
+        # macOS keeps /etc, /var and /tmp under /private, and temp dirs, project dirs and sometimes homes
+        # resolve there. Strip the prefix from the target, the home and the cwd alike, or they never compare equal.
+        def unpriv(x: str) -> str:
+            if x == "/private" or x.startswith("/private/"):
+                return x[len("/private"):] or "/"
+            return x
+
+        p = unpriv(p)
+        if p == "/":
+            return "catastrophic"
         parts = [x for x in p.split("/") if x]
         if len(parts) == 1 or _MSYS_ROOT.match(p):
             return "catastrophic"
         q = self._ci(p)
-        home = self._ci(self.home)
-        cwd = self._ci(self.cwd)
+        home_dir = unpriv(self.home)
+        home = self._ci(home_dir)
+        cwd = self._ci(unpriv(self.cwd))
         if q == home or (home != "/" and home.startswith(q + "/")):
             return "catastrophic"
         if cwd == q or cwd.startswith(q + "/"):
@@ -517,7 +524,7 @@ class Analyzer:
         if os.path.basename(p) == ".git":
             return "dotgit"
         for d in CRED_DIRS:
-            base = self._ci(os.path.join(self.home, d))
+            base = self._ci(os.path.join(home_dir, d))
             if q == base or (q.startswith(base + "/") and CRED_FILE_RE.match(os.path.basename(p))):
                 return "creds"
         for pref in SYSTEM_PREFIXES:
