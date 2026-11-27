@@ -930,14 +930,22 @@ def sec_scale(quick):
     A = "scalability"
     sb.run(["init"])
     n = 3000 if quick else 20000
-    code = (f"import time\nfrom kneepad.audit import AuditLog\nl=AuditLog()\nt=time.perf_counter()\n"
-            f"for i in range({n}):\n    l.append('decision',{{'tool':'Bash','action':'ask','command':'x'*40+str(i),'findings':[]}})\n"
-            f"print(time.perf_counter()-t)\n")
+    code = (f"import time\nfrom kneepad.audit import AuditLog\nl=AuditLog()\nN={n}\nW=300\nmarks=[]\nt=time.perf_counter()\n"
+            f"for i in range(N):\n    if i in (W, N-W):\n        marks.append(time.perf_counter())\n"
+            f"    l.append('decision',{{'tool':'Bash','action':'ask','command':'x'*40+str(i),'findings':[]}})\n"
+            f"end=time.perf_counter()\nprint(end-t)\nprint((marks[0]-t)/W*1000)\nprint((end-marks[1])/W*1000)\n")
     rc, out, err, secs = sb.py(code, timeout=1200)
-    check("SCL-001", A, rc == 0, f"append {n} entries: {out.strip()}s {err[-200:]}")
-    per = float(out.strip().splitlines()[-1]) / n * 1000 if rc == 0 and out.strip() else 999
-    note(f"append: {per:.2f} ms/entry on a log growing to {n} entries")
-    check("SCL-002", A, per < 20, f"append cost per entry {per:.2f} ms (must not degrade with log size)")
+    lines = out.strip().splitlines()
+    check("SCL-001", A, rc == 0 and len(lines) >= 3, f"append {n} entries: {lines[:1]}s {err[-200:]}")
+    ok = rc == 0 and len(lines) >= 3
+    per = float(lines[0]) / n * 1000 if ok else 999
+    first, last = (float(lines[1]), float(lines[2])) if ok else (0.0, 999.0)
+    note(f"append: {per:.2f} ms/entry on average; first 300 {first:.2f} ms, last 300 {last:.2f} ms (log of {n} entries)")
+    # The claim is that cost does not grow with log size, so compare the start with the end of the same run. The absolute
+    # ceiling only catches a gross slowdown; it is higher on Windows, where every append takes a lock and a flush on a shared runner.
+    ceiling = 60 if os.name == "nt" else 20
+    check("SCL-002", A, per < ceiling and last <= first * 3 + 2,
+          f"append cost {per:.2f} ms avg (limit {ceiling}); first 300 {first:.2f} ms, last 300 {last:.2f} ms (must not degrade with log size)")
     rc, out, err, secs = sb.run(["verify"], timeout=600)
     note(f"verify {n} entries: {secs:.2f}s")
     check("SCL-003", A, rc == 0 and secs < (n / 500), f"verify {n} entries took {secs:.1f}s")
