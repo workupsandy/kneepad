@@ -187,23 +187,17 @@ if __name__ == "__main__":
 class TestBrokenPipe(unittest.TestCase):
     """`kneepad rules list | head -1` must exit 0 and stay silent, whenever the reader leaves (CI: STB-007 on macOS)."""
 
-    @unittest.skipIf(os.name == "nt", "needs a POSIX pipe whose reader can leave early (`| head -1`); Windows cannot pass a raw os.pipe() descriptor to a child")
     def test_reader_leaves_before_exit_flush(self):
-        import subprocess
-        import time
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
         code = ("import sys,time;sys.path.insert(0,%r);from kneepad.cli import main\n"
                 "rc=main(['rules','list'])\n"
                 "time.sleep(0.5)\n"
                 "sys.exit(rc)") % src
         env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
-        r, w = os.pipe()
-        p = subprocess.Popen([sys.executable, "-c", code], stdout=w, stderr=subprocess.PIPE, env=env)
-        os.close(w)
-        time.sleep(0.3)
-        os.read(r, 100)
-        os.close(r)
-        err = p.stderr.read().decode()
+        p = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        p.stdout.read(100)
+        p.stdout.close()  # the reader leaves, like `head -1`
+        err = p.stderr.read().decode(errors="replace")
         rc = p.wait()
         p.stderr.close()
         self.assertEqual(err.strip(), "", err)

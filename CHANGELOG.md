@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2
+Closes the three gaps that 0.3.1 listed.
+- Windows: the audit key and the state directory are now checked and, if needed, tightened. Kneepad reads the ACL with `icacls`
+  (as SDDL, so it works in any display language) when it creates the directory or key, in `kneepad init` and in `kneepad doctor`.
+  If anybody besides you, SYSTEM and Administrators can reach them (for example a `KNEEPAD_HOME` that inherits Users or Everyone
+  access) it removes that access; `doctor` reports private, exposed (and to whom) or unknown. Nothing runs on the hook path.
+  New module `kneepad.winacl`.
+- Tests: ported tests that used to be skipped on Windows. The `kneepad shell` Windows branch (child process, exit code passed through)
+  and the POSIX `exec` branch are both tested on every platform; the init round trip runs for every target that can be installed
+  on the platform; the broken-pipe test no longer needs POSIX pipes; the POSIX mode-bit tests have Windows ACL counterparts.
+  Still skipped on Windows by design: the macOS path simulation (macOS jobs run it), Cline hooks (not supported on Windows) and the
+  Cline script executable bit.
+- CI: GitHub Actions moved to current majors (`checkout`, `setup-python`, `upload-artifact` v7, all running on Node 24), which clears
+  the Node.js 20 deprecation warning.
+
 ## 0.3.1
 Found by an end-to-end QA pass (`tools/qa_e2e.py`) against the installed package.
 - Security: `kneepad shell` only recognised `-c`, `-lc`, `-ic` and `-cl`, so `kneepad shell -ec 'rm -rf ~'` (and `-xc`, `-euc`,

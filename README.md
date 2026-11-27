@@ -24,7 +24,7 @@ Claude Code, OpenAI Codex CLI, Cursor, Gemini CLI, GitHub Copilot CLI, Cline, an
 |---|---|---|---|
 | Command analysis | yes | yes: `diskutil`, `tmutil`, `csrutil`, `launchctl`, `security`, `dscl`, `osascript do shell script`, `/private` paths, case-insensitive volumes | yes: cmd.exe and PowerShell syntax, drive and UNC paths, `Remove-Item`/`del`/`rd`, registry, `-EncodedCommand` is decoded, `wsl`/`cmd /c`/`powershell -c` are unwrapped |
 | Agent hook installers | all | all | all except Cline (its docs say macOS and Linux only) |
-| Continuous integration | full suite | full suite | rule examples and platform tests (the suites that run there passed on real Windows runners for 0.3.0) |
+| Continuous integration | full suite and end-to-end QA | full suite and end-to-end QA | rule examples and platform tests gate the build; the full suite and the end-to-end QA run as informational steps and passed on real Windows runners for 0.3.1 |
 
 Be clear about what this means. The Windows and macOS logic was written and unit-tested on Linux by simulating those platforms' paths and syntax, plus a mutation pass over the new code. The full suite passes on real macOS runners, and the Windows-specific tests pass on real Windows runners (Windows does not run the whole suite). Neither has been used by a person on a real machine with a real agent, so treat both as lightly proven. No agent integration has been run inside its real vendor app on any operating system. Known gaps are listed in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
@@ -82,6 +82,6 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) before relying on it. In short
 python3 -m unittest discover -s tests
 ```
 
-408 tests: parser, SQL scanner, every rule example, about 280 everyday commands that must pass silently, about 120 destructive commands that must be stopped, audit tamper fuzzing (every single byte flip is detected), concurrent writers, hostile-repo handling, random-input robustness, and Windows and macOS path and syntax simulation. `python tools/smoke_hook.py` installs the hooks into a throwaway home and runs the written hook command through your real OS shell.
+438 tests: parser, SQL scanner, every rule example, about 280 everyday commands that must pass silently, about 120 destructive commands that must be stopped, audit tamper fuzzing (every single byte flip is detected), concurrent writers, hostile-repo handling, random-input robustness, and Windows and macOS path and syntax simulation. `python tools/smoke_hook.py` installs the hooks into a throwaway home and runs the written hook command through your real OS shell.
 
 Adding a rule: see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). The rule list is in [docs/FOOTGUNS.md](docs/FOOTGUNS.md).

@@ -27,9 +27,15 @@ def is_windows() -> bool:
 
 
 def ensure_private_dir(path: str) -> None:
+    existed = os.path.isdir(path)
     os.makedirs(path, mode=0o700, exist_ok=True)
     if is_windows():
-        return  # POSIX mode bits mean nothing on NTFS; the user profile is private to the account by default
+        # POSIX mode bits mean nothing on NTFS. Under the user profile the inherited ACL is already private; elsewhere it may
+        # grant Users or Everyone access, so check once, when the directory is created (icacls is too slow for every hook call).
+        if not existed:
+            from . import winacl
+            winacl.tighten_if_exposed(path, True)
+        return
     try:  # a directory we did not create may be too open; tighten it if we own it
         st = os.stat(path)
         if st.st_uid == os.getuid() and (st.st_mode & 0o077):

@@ -192,6 +192,32 @@ class TestCliBranches(Sandbox):
         rc, out, err = self.cli("doctor")
         self.assertNotIn("cursor hook installed", out)
 
+    def test_init_each_installable_target_roundtrip(self):
+        """Same round trip as `--target all`, but without Cline on Windows, where it is intentionally refused."""
+        targets = [t for t in integrations.TARGETS if not (t == "cline" and sys.platform == "win32")]
+        args = ["init", "--claude-code", "--scope", "project"]
+        for t in targets:
+            args += ["--target", t]
+        rc, out, err = self.cli(*args)
+        self.assertEqual(rc, 0, err)
+        rc, out, err = self.cli("doctor")
+        for t in targets:
+            self.assertIn(f"{t} hook installed", out)
+        un = ["uninstall", "--claude-code", "--scope", "project"]
+        for t in targets:
+            un += ["--target", t]
+        rc, out, err = self.cli(*un)
+        self.assertEqual(rc, 0, err)
+        rc, out, err = self.cli("doctor")
+        for t in targets:
+            self.assertNotIn(f"{t} hook installed", out)
+
+    @unittest.skipUnless(sys.platform == "win32", "Cline is refused only on Windows")
+    def test_cline_is_refused_clearly_on_windows(self):
+        rc, out, err = self.cli("init", "--target", "cline", "--scope", "project")
+        self.assertEqual(rc, 1)
+        self.assertIn("Windows", err)
+
     def test_uninstall_default_removes_claude_hook_only(self):
         self.cli("init", "--claude-code")
         rc, out, _ = self.cli("uninstall")
@@ -287,7 +313,7 @@ class TestCliBranches(Sandbox):
         rc, out, _ = self.cli("badge", "--force", "--out", out_path)
         self.assertEqual(rc, 0)
 
-    @unittest.skipIf(sys.platform == "win32", "POSIX mode bits; Windows relies on the profile ACL (THREAT_MODEL item 12)")
+    @unittest.skipIf(sys.platform == "win32", "POSIX mode bits; the Windows ACL equivalents are in tests/test_winacl.py")
     def test_doctor_variants(self):
         shutil.rmtree(self.state)
         rc, out, _ = self.cli("doctor")
@@ -370,18 +396,39 @@ class TestCliBranches(Sandbox):
         self.assertTrue(os.path.exists("untracked.txt"), "the file must not be deleted when its backup failed")
         self.assertTrue(AuditLog().read_all()[-1]["data"]["refused"])
 
-    @unittest.skipIf(sys.platform == "win32", "Windows runs the real shell as a child process instead of exec (the exit code would be lost)")
     def test_shell_branches(self):
+        """POSIX replaces the process with the real shell (exec); the Windows branch is covered by the next test."""
         self.cli("init")
-        with mock.patch.object(cli.os, "execv") as ex:
-            rc = cli.cmd_shell(type("A", (), {"argv": ["-c", "echo hi"]})())
-        ex.assert_called_once()
-        with mock.patch.object(cli.os, "execv") as ex:
-            rc = cli.cmd_shell(type("A", (), {"argv": ["--", "-c", "echo hi"]})())
-        ex.assert_called_once()
-        with mock.patch.object(cli.os, "execv") as ex:  # interactive shell or script: nothing to vet
-            cli.cmd_shell(type("A", (), {"argv": ["script.sh"]})())
-        ex.assert_called_once()
+        with mock.patch.object(cli, "_is_windows", return_value=False):
+            with mock.patch.object(cli.os, "execv") as ex:
+                rc = cli.cmd_shell(type("A", (), {"argv": ["-c", "echo hi"]})())
+            ex.assert_called_once()
+            with mock.patch.object(cli.os, "execv") as ex:
+                rc = cli.cmd_shell(type("A", (), {"argv": ["--", "-c", "echo hi"]})())
+            ex.assert_called_once()
+            with mock.patch.object(cli.os, "execv") as ex:  # interactive shell or script: nothing to vet
+                cli.cmd_shell(type("A", (), {"argv": ["script.sh"]})())
+            ex.assert_called_once()
+
+    def test_shell_branches_windows_child_process(self):
+        """Windows cannot exec (the exit code would be lost), so the shell runs as a child and its exit code is returned."""
+        self.cli("init")
+        with mock.patch.object(cli, "_is_windows", return_value=True), mock.patch.object(cli.os, "execv") as ex:
+            with mock.patch.object(cli.subprocess, "call", return_value=7) as call:
+                rc = cli.cmd_shell(type("A", (), {"argv": ["-c", "echo hi"]})())
+            self.assertEqual(rc, 7)
+            self.assertEqual(call.call_args[0][0][1:], ["-c", "echo hi"])
+            with mock.patch.object(cli.subprocess, "call", side_effect=FileNotFoundError("no bash")):
+                err = io.StringIO()
+                with redirect_stderr(err):
+                    rc = cli.cmd_shell(type("A", (), {"argv": ["-c", "echo hi"]})())
+            self.assertEqual(rc, 127)
+            self.assertIn("cannot run", err.getvalue())
+            with mock.patch.object(cli.subprocess, "call", return_value=0) as call:  # refused commands never reach the shell
+                rc = cli.cmd_shell(type("A", (), {"argv": ["-c", "rm -rf /"]})())
+            self.assertEqual(rc, 126)
+            call.assert_not_called()
+        ex.assert_not_called()
 
     def test_default_real_shell(self):
         self.assertTrue(cli._default_real_shell())

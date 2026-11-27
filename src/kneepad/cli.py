@@ -89,6 +89,14 @@ def cmd_init(args) -> int:
     log.ensure_key()
     log.append_if_empty("init", {"version": __version__})
     print(f"Kneepad state directory: {home}")
+    if sys.platform == "win32":
+        from . import winacl
+        for p, is_dir in ((home, True), (log.key_path, False)):
+            fixed = winacl.tighten_if_exposed(p, is_dir)
+            if fixed is True:
+                print(f"Tightened access to {p}: now only you, SYSTEM and Administrators")
+            elif fixed is False:
+                print(f"warning: {p} is also accessible to other accounts and could not be tightened; fix it with icacls", file=sys.stderr)
     targets = list(getattr(args, "target", None) or [])
     if "all" in targets:
         targets = list(TARGETS)
@@ -256,7 +264,10 @@ def run_doctor(cwd: str) -> List[tuple]:
         items.append((False, "footgun database", str(exc)[:200]))
     win = sys.platform == "win32"
     if os.path.isdir(home) and win:
-        items.append((None, "state directory is private", f"{home} (NTFS: protected by your user profile ACL, not checked)"))
+        from . import winacl
+        rep = winacl.check(home)
+        items.append((True if rep.status == "private" else False if rep.status == "exposed" else None,
+                      "state directory is private", f"{home} ({rep.detail or 'only you, SYSTEM and Administrators'})"))
     elif os.path.isdir(home):
         mode = stat.S_IMODE(os.stat(home).st_mode)
         items.append((mode & 0o077 == 0 or None, "state directory is private", f"{home} mode {oct(mode)}"))
@@ -264,7 +275,10 @@ def run_doctor(cwd: str) -> List[tuple]:
         items.append((None, "state directory exists", f"{home} not created yet; run kneepad init"))
     log = AuditLog(home)
     if os.path.exists(log.key_path) and win:
-        items.append((None, "audit key is private", "NTFS: protected by your user profile ACL, not checked"))
+        from . import winacl
+        rep = winacl.check(log.key_path)
+        items.append((True if rep.status == "private" else False if rep.status == "exposed" else None,
+                      "audit key is private", rep.detail or "only you, SYSTEM and Administrators"))
     elif os.path.exists(log.key_path):
         mode = stat.S_IMODE(os.stat(log.key_path).st_mode)
         items.append((mode & 0o077 == 0, "audit key is private", oct(mode)))
@@ -415,7 +429,7 @@ def cmd_shell(args) -> int:
     cmd_text = _shell_command_arg(argv)
     if cmd_text is not None and _vet_command(cmd_text, "shell", interactive_ask=False) != 0:
         return 126
-    if sys.platform == "win32":  # os.execv on Windows detaches and loses the exit code
+    if _is_windows():  # os.execv on Windows detaches and loses the exit code
         try:
             return subprocess.call([real] + argv)
         except OSError as exc:
@@ -532,6 +546,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true")
     s.set_defaults(func=cmd_badge)
     return p
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
 
 
 def shell_main() -> int:

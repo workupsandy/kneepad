@@ -305,7 +305,7 @@ class TestWindowsWrites(unittest.TestCase):
         self.assertEqual(az.analyze_write_path("c:\\USERS\\ME\\.SSH\\config").action, "ask")
 
 
-@unittest.skipIf(os.name == "nt", "simulates macOS with POSIX paths, which Windows' own path functions cannot process")
+@unittest.skipIf(os.name == "nt", "simulates macOS with POSIX paths, which Windows' own path functions cannot process; the macOS CI jobs run these")
 class TestMacOS(unittest.TestCase):
     def test_home_and_cwd_under_private_are_compared_consistently(self):
         """GitHub's macOS runners (and many real temp dirs) live under /private/var; the prefix must not break matching."""

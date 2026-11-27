@@ -125,6 +125,9 @@ class AuditLog:
                 except OSError:
                     pass
             key = self._read_key()
+            if os.name == "nt":  # 0o600 is ignored on NTFS; make sure inherited access is not wider than the owner
+                from . import winacl
+                winacl.tighten_if_exposed(self.key_path, False)
         if key is None:
             raise OSError("could not read the audit key")
         return key
