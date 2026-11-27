@@ -14,7 +14,7 @@ import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .installer import InstallError, _load, _write_atomic
-from .util import is_windows, quote_exe
+from .util import is_kneepad_hook_command, is_windows, quote_exe
 
 
 def _exe() -> str:
@@ -30,7 +30,7 @@ def _ours(entry: object) -> bool:
     if not isinstance(entry, dict):
         return False
     c = str(entry.get("command", "")) + str(entry.get("bash", "")) + str(entry.get("powershell", ""))
-    return "kneepad" in c and " hook " in f" {c} "
+    return is_kneepad_hook_command(c)
 
 
 def _backup(path: str) -> None:

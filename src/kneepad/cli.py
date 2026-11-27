@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import stat
@@ -24,7 +25,7 @@ from .integrations import TARGETS, install_target, uninstall_target
 from .installer import InstallError, hook_command, install, is_installed, settings_path, uninstall
 from .rules import load_default_rules, load_rules_text
 from .snapshots import SnapshotError, SnapshotStore
-from .util import kneepad_home
+from .util import kneepad_home, redact
 
 EXIT_ALLOW, EXIT_ASK, EXIT_DENY = 0, 10, 20
 
@@ -86,8 +87,7 @@ def cmd_init(args) -> int:
     home = kneepad_home()
     log = AuditLog(home)
     log.ensure_key()
-    if not log.read_all():
-        log.append("init", {"version": __version__})
+    log.append_if_empty("init", {"version": __version__})
     print(f"Kneepad state directory: {home}")
     targets = list(getattr(args, "target", None) or [])
     if "all" in targets:
@@ -139,6 +139,9 @@ def cmd_uninstall(args) -> int:
 
 
 def cmd_log(args) -> int:
+    if args.n < 0:
+        print("kneepad log: -n must be 0 or greater", file=sys.stderr)
+        return 2
     entries = AuditLog().tail(args.n)
     if args.json:
         print(json.dumps(entries, indent=2))
@@ -184,7 +187,7 @@ def cmd_rules(args) -> int:
         except (OSError, ValueError) as exc:
             print(f"INVALID: {exc}")
             return 1
-        print(f"OK: {len(rules)} rules")
+        print(f"OK: {len(rules)} rules (structure and regexes only; the test suite runs each rule's examples)")
         return 0
     rules = load_default_rules()
     if args.rules_cmd == "list":
@@ -312,8 +315,12 @@ def cmd_badge(args) -> int:
                   "does not verify. Run `kneepad doctor`. (Use --force to override.)", file=sys.stderr)
             return 1
     out = args.out
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write(make_badge())
+    try:
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(make_badge())
+    except OSError as exc:
+        print(f"kneepad badge: cannot write {out}: {exc}", file=sys.stderr)
+        return 1
     print(f"wrote {out}")
     print(f"Markdown:  ![Protected by Kneepad](./{os.path.basename(out)})")
     return 0
@@ -328,6 +335,74 @@ def _default_real_shell() -> str:
     return "/bin/sh"
 
 
+def _shell_command_arg(argv: List[str]) -> Optional[str]:
+    """Return the command string of a `sh -c STRING` style invocation, or None when there is none.
+
+    Handles clustered short options (-ec, -xc, -lc, -euc), separate options before -c (-l -c, -o pipefail -c),
+    and long options (--norc). Stops at the first non-option word, which a shell treats as a script path.
+    """
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--":
+            return None
+        if a in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+            i += 2
+            continue
+        if a.startswith("--"):
+            i += 1
+            continue
+        if re.fullmatch(r"[-+][A-Za-z]+", a):
+            if a[0] == "-" and "c" in a:
+                return argv[i + 1] if i + 1 < len(argv) else None
+            i += 1
+            continue
+        return None
+    return None
+
+
+def _vet_command(text: str, tool: str, interactive_ask: bool) -> int:
+    """Shared by `run` and `shell`: analyse, snapshot, log, and return 0 to proceed or 126 to refuse.
+
+    Every outcome is written to the audit log, including refusals. A failure to write the log is reported on
+    stderr instead of being swallowed.
+    """
+    cfg = load_config(os.getcwd())
+    d = Analyzer(config=cfg, cwd=os.getcwd()).analyze_shell(text)
+    refused = False
+    if d.action in ("deny", "ask") and cfg.mode != "monitor":
+        print(d.reason(), file=sys.stderr)
+        if d.action == "deny":
+            refused = True
+        elif interactive_ask and sys.stdin.isatty():
+            refused = input("Run it anyway? [y/N] ").strip().lower() != "y"
+        else:
+            print("Not a terminal, so Kneepad cannot ask. Refusing." if interactive_ask else "Kneepad blocked this command.",
+                  file=sys.stderr)
+            refused = True
+    snaps: List[str] = []
+    if not refused and d.plans:
+        try:
+            store = SnapshotStore()
+            for p in d.plans:
+                sid = store.create(p)["id"]
+                snaps.append(sid)
+                print(f"kneepad: snapshot {sid}", file=sys.stderr)
+        except SnapshotError as exc:
+            print(f"kneepad: snapshot failed ({exc}); refusing to run.", file=sys.stderr)
+            refused = True
+    try:
+        AuditLog().append("decision", {
+            "tool": tool, "action": d.action, "mode": cfg.mode, "refused": refused, "cwd": os.getcwd(),
+            "command": redact(text, 2000), "snapshots": snaps,
+            "findings": [{"rule": f.rule_id, "severity": f.severity, "action": f.action, "detail": redact(f.detail, 300)}
+                         for f in d.findings]})
+    except Exception as exc:
+        print(f"kneepad: warning: could not write the audit log ({type(exc).__name__}: {exc}). "
+              "Continuing, but this decision is not recorded.", file=sys.stderr)
+    return 126 if refused else 0
+
+
 def cmd_shell(args) -> int:
     """Drop-in for $SHELL: `kneepad shell -c "cmd"` checks the command, then runs it with the real shell.
 
@@ -337,13 +412,9 @@ def cmd_shell(args) -> int:
     argv = list(args.argv)
     if argv and argv[0] == "--":
         argv = argv[1:]
-    if len(argv) >= 2 and argv[0] in ("-c", "-lc", "-ic", "-cl", "-l", "-i") and argv[0].endswith("c"):
-        cfg = load_config(os.getcwd())
-        d = Analyzer(config=cfg, cwd=os.getcwd()).analyze_shell(argv[1])
-        if d.action in ("deny", "ask") and cfg.mode != "monitor":
-            print(d.reason(), file=sys.stderr)
-            print("Kneepad blocked this command.", file=sys.stderr)
-            return 126
+    cmd_text = _shell_command_arg(argv)
+    if cmd_text is not None and _vet_command(cmd_text, "shell", interactive_ask=False) != 0:
+        return 126
     if sys.platform == "win32":  # os.execv on Windows detaches and loses the exit code
         try:
             return subprocess.call([real] + argv)
@@ -356,39 +427,26 @@ def cmd_shell(args) -> int:
 
 def cmd_run(args) -> int:
     argv = args.argv
+    if argv and argv[0] in ("-h", "--help"):
+        print("usage: kneepad run [--] COMMAND [ARGS...]\n\nAnalyse COMMAND with Kneepad and run it only if it is allowed.\n"
+              "Exit codes: the command's own exit code; 126 when Kneepad refuses; 127 when the program is not found.")
+        return 0
     if argv and argv[0] == "--":
         argv = argv[1:]
     if not argv:
-        print("usage: kneepad run -- COMMAND [ARGS...]", file=sys.stderr)
+        print("usage: kneepad run [--] COMMAND [ARGS...]", file=sys.stderr)
         return 2
     text = subprocess.list2cmdline(argv) if sys.platform == "win32" else shlex.join(argv)
-    cfg = load_config(os.getcwd())
-    az = Analyzer(config=cfg, cwd=os.getcwd())
-    d = az.analyze_shell(text)
-    if d.action in ("deny", "ask") and cfg.mode != "monitor":
-        print(d.reason(), file=sys.stderr)
-        if d.action == "deny":
-            return 126
-        if not sys.stdin.isatty():
-            print("Not a terminal, so Kneepad cannot ask. Refusing.", file=sys.stderr)
-            return 126
-        if input("Run it anyway? [y/N] ").strip().lower() != "y":
-            return 126
-    if d.plans:
-        store = SnapshotStore()
-        try:
-            for p in d.plans:
-                sid = store.create(p)["id"]
-                print(f"kneepad: snapshot {sid}", file=sys.stderr)
-        except SnapshotError as exc:
-            print(f"kneepad: snapshot failed ({exc}); refusing to run.", file=sys.stderr)
-            return 126
+    if _vet_command(text, "run", interactive_ask=True) != 0:
+        return 126
     try:
-        AuditLog().append("decision", {"tool": "run", "action": d.action, "command": text[:2000],
-                                       "findings": [{"rule": f.rule_id, "action": f.action} for f in d.findings]})
-    except Exception:
-        pass
-    return subprocess.call(argv)
+        return subprocess.call(argv)
+    except FileNotFoundError:
+        print(f"kneepad run: command not found: {argv[0]}", file=sys.stderr)
+        return 127
+    except OSError as exc:
+        print(f"kneepad run: cannot execute {argv[0]}: {exc}", file=sys.stderr)
+        return 126
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -397,15 +455,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init", help="create state, key and optionally install the Claude Code hook")
-    s.add_argument("--claude-code", action="store_true")
+    s.add_argument("--claude-code", action="store_true", help="install the Claude Code PreToolUse hook")
     s.add_argument("--target", action="append", choices=list(TARGETS) + ["all"], help="also install for another agent (repeatable)")
-    s.add_argument("--scope", choices=["user", "project"], default="user")
+    s.add_argument("--scope", choices=["user", "project"], default="user", help="user: your home directory (default); project: this repository only")
     s.set_defaults(func=cmd_init)
 
     s = sub.add_parser("uninstall", help="remove the Claude Code hook (or --target another agent)")
     s.add_argument("--claude-code", action="store_true", help="also remove the Claude Code hook when --target is given")
-    s.add_argument("--target", action="append", choices=list(TARGETS) + ["all"])
-    s.add_argument("--scope", choices=["user", "project"], default="user")
+    s.add_argument("--target", action="append", choices=list(TARGETS) + ["all"], help="agent to remove the hook from (repeatable)")
+    s.add_argument("--scope", choices=["user", "project"], default="user", help="user: your home directory (default); project: this repository only")
     s.set_defaults(func=cmd_uninstall)
 
     s = sub.add_parser("hook", help="run as a hook (reads JSON on stdin)")
@@ -419,7 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_check)
 
-    s = sub.add_parser("shell", help="shell wrapper for agents that run commands through $SHELL -c")
+    s = sub.add_parser("shell", help="shell wrapper for agents that run commands through $SHELL -c (all arguments go to the real shell, so --help shows the shell's help)")
     s.add_argument("argv", nargs=argparse.REMAINDER)
     s.set_defaults(func=cmd_shell)
 
@@ -496,3 +554,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 130
     except BrokenPipeError:
         return 0
+    except OSError as exc:
+        print(f"kneepad: error: {exc}", file=sys.stderr)
+        return 1

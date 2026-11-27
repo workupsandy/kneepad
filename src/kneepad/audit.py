@@ -41,6 +41,9 @@ try:  # POSIX
 
     def _unlock(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_UN)
+
+    def _lock_shared(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_SH)
 except ImportError:  # Windows
     import msvcrt
 
@@ -59,6 +62,8 @@ except ImportError:  # Windows
     def _unlock(fd: int) -> None:
         os.lseek(fd, 0, os.SEEK_SET)
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+    _lock_shared = _lock  # Windows has no shared byte-range lock here; an exclusive one is brief
 
 
 def canonical(obj: Dict[str, Any]) -> str:
@@ -82,6 +87,10 @@ class VerifyResult:
 
 class _Rotated(Exception):
     pass
+
+
+class _Stale(Exception):
+    """The file we locked is no longer the live log (another writer rotated it while we waited)."""
 
 
 class AuditLog:
@@ -138,26 +147,51 @@ class AuditLog:
         while pos > 0:
             read = min(chunk, pos)
             pos -= read
-            data = os.pread(fd, read, pos) + data
+            os.lseek(fd, pos, os.SEEK_SET)  # portable: os.pread does not exist on Windows
+            data = os.read(fd, read) + data
             body = data.rstrip(b"\n")
             if b"\n" in body or pos == 0:
                 break
         body = data.rstrip(b"\n")
         return body.rsplit(b"\n", 1)[-1] if body else None
 
-    def append(self, event: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            return self._append(event, data)
-        except _Rotated:
-            return self._append(event, {**data, "note": "previous log was corrupt and was set aside"})
+    def append_if_empty(self, event: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Append only when the log has no entries yet, atomically (parallel `init` calls write one init event)."""
+        return self.append(event, data, only_if_empty=True)
 
-    def _append(self, event: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def append(self, event: str, data: Dict[str, Any], only_if_empty: bool = False) -> Optional[Dict[str, Any]]:
+        note = False
+        for _attempt in range(50):
+            try:
+                return self._append(event, {**data, "note": "previous log was corrupt and was set aside"} if note else data,
+                                    only_if_empty)
+            except _Rotated:
+                note = True
+            except _Stale:
+                continue
+        raise OSError("audit log kept changing underneath this writer; giving up")
+
+    def _is_live(self, fd: int) -> bool:
+        """True when ``fd`` still refers to the file currently at self.path (not one a peer rotated away)."""
+        try:
+            a, b = os.stat(self.path), os.fstat(fd)
+        except OSError:
+            return False
+        if not a.st_ino or not b.st_ino:  # some Windows filesystems report no inode: assume live
+            return True
+        return (a.st_ino, a.st_dev) == (b.st_ino, b.st_dev)
+
+    def _append(self, event: str, data: Dict[str, Any], only_if_empty: bool = False) -> Optional[Dict[str, Any]]:
         key = self.ensure_key()
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_APPEND | _BIN, 0o600)
         try:
             _lock(fd)
             try:
+                if not self._is_live(fd):
+                    raise _Stale()
                 last_raw = self._last_line(fd)
+                if only_if_empty and last_raw is not None:
+                    return None
                 last: Optional[Dict[str, Any]] = None
                 if last_raw is not None:
                     try:
@@ -210,7 +244,7 @@ class AuditLog:
         return out
 
     def tail(self, n: int = 20) -> List[Dict[str, Any]]:
-        return self.read_all()[-n:]
+        return self.read_all()[-n:] if n > 0 else []
 
     def verify(self, anchor: Optional[str] = None) -> VerifyResult:
         res = VerifyResult(ok=True)
@@ -234,6 +268,12 @@ class AuditLog:
                 return VerifyResult(ok=False, error="no audit log exists but an anchor was supplied")
             return res
         with fh:
+            try:
+                # Wait for any append in progress, so a half-written last line is never mistaken for tampering.
+                # Closing the file at the end of this block releases the lock.
+                _lock_shared(fh.fileno())
+            except (OSError, ValueError):
+                pass
             for lineno, raw in enumerate(fh, 1):
                 raw = raw.rstrip(b"\n")
                 if not raw:

@@ -9,7 +9,7 @@ import sys
 import tempfile
 from typing import List
 
-from .util import quote_exe
+from .util import is_kneepad_hook_command, quote_exe
 
 MATCHER = "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*"
 
@@ -37,7 +37,7 @@ def _is_ours(handler: object) -> bool:
     if not isinstance(handler, dict):
         return False
     cmd = str(handler.get("command", ""))
-    return "kneepad" in cmd and " hook " in f" {cmd} "
+    return is_kneepad_hook_command(cmd)
 
 
 def _load(path: str) -> dict:

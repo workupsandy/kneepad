@@ -39,6 +39,8 @@ SQL_CLIENTS = frozenset({
 })
 MONGO_CLIENTS = frozenset({"mongosh", "mongo"})
 REDIS_CLIENTS = frozenset({"redis-cli", "valkey-cli", "keydb-cli"})
+# Glob names that match (nearly) everything in a directory: *, .*, ?*, .[a-z]*
+_MATCH_ALL_GLOB = re.compile(r"^(?:\.?[*?]+|\.\[[^\]]+\]\*)$")
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk", "production", "prod", "release"})
 SYSTEM_PREFIXES = ("/bin", "/sbin", "/usr", "/etc", "/lib", "/lib32", "/lib64", "/boot", "/sys",
                    "/proc", "/dev", "/var/lib", "/var/log", "/var/spool", "/opt", "/srv",
@@ -247,7 +249,7 @@ class Analyzer:
         strings: List[Tuple[str, str]] = []
         _collect_strings(tool_input, "", strings, [0])
         lname = tool_name.lower()
-        if re.search(r"sql|query|database|\bdb\b|postgres|mysql|sqlite|supabase|neon|planetscale|snowflake|bigquery|execute", lname):
+        if re.search(r"sql|query|database|(?<![a-z0-9])db(?![a-z0-9])|postgres|mysql|sqlite|supabase|neon|planetscale|snowflake|bigquery|execute", lname):
             for _k, s in strings:
                 self._scan_sql_like(s)
         if re.search(r"shell|bash|terminal|run_command|exec|command", lname):
@@ -351,6 +353,9 @@ class Analyzer:
         for w in words:
             if is_assignment(w.text):
                 name, val = w.text.split("=", 1)
+                raw_val = w.raw.split("=", 1)[1] if "=" in w.raw else ""
+                if raw_val == "~" or raw_val.startswith("~/"):  # bash expands an unquoted leading tilde in an assignment
+                    val = self.home + val[1:]
                 self.vars[name.rstrip("+")] = val
 
     # ---------------------------------------------------------- per-command
@@ -365,7 +370,7 @@ class Analyzer:
             if match_argv(r, pa):
                 self._emit_dsl(r, pa)
         name = pa.name
-        if name == "rm":
+        if name in ("rm", "unlink"):
             self._h_rm(pa)
         elif name == "find":
             self._h_find(pa, depth)
@@ -575,6 +580,10 @@ class Analyzer:
             paths = [text]
             if w.glob:
                 pat = text if os.path.isabs(text) else os.path.join(self.cwd, text)
+                if recursive and _MATCH_ALL_GLOB.match(os.path.basename(pat)) and self._classify(os.path.dirname(pat) or "/") == "catastrophic":
+                    # `rm -rf ~/*`, `rm -rf /home/*`: whatever the glob matches today, the intent is to wipe the directory.
+                    self.emit("fs-rm-catastrophic", w.raw or w.text)
+                    continue
                 matches = glob.glob(pat)
                 if len(matches) > 2000:
                     if recursive:
@@ -707,7 +716,7 @@ class Analyzer:
         for pat in self.cfg.allow_write_paths:
             p = os.path.expanduser(pat)
             p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
-            if fnmatch.fnmatch(ap, p) or ap == p:
+            if fnmatch.fnmatch(ap, p) or ap == p or ap.startswith(p.rstrip("/") + "/"):
                 return None
         c = self._ci(ap)
         for rel in PROTECTED_HOME_DIRS:
@@ -739,7 +748,7 @@ class Analyzer:
         for pat in self.cfg.protected_paths:
             p = os.path.expanduser(pat)
             p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
-            if fnmatch.fnmatch(ap, p) or ap == p:
+            if fnmatch.fnmatch(ap, p) or ap == p or ap.startswith(p.rstrip("/") + "/"):
                 return f"protected by config pattern {pat}"
         return None
 

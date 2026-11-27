@@ -1,0 +1,233 @@
+# One command per line. Each must be allowed.
+ls
+ls -la
+pwd
+cd /tmp
+cat a.txt
+echo hi
+echo "rm -rf /"
+echo 'DROP TABLE x'
+printf '%s' 'rm -rf ~'
+git status
+git log
+git diff
+git add .
+git commit -m "x"
+git commit -m "remove rm -rf /"
+git push
+git push origin feature
+git push -u origin feature
+git push --force-with-lease origin feature
+git pull
+git fetch --all --prune
+git checkout main
+git checkout -b x
+git switch x
+git merge x
+git rebase main
+git stash
+git stash pop
+git stash list
+git tag v1
+git branch
+git branch -d merged
+git remote -v
+git clean -n
+git clean -nd
+git reset
+git reset --soft HEAD~1
+git reset HEAD file
+git restore --staged f
+git diff --stat | head
+npm install
+npm ci
+npm test
+npm run build
+npx jest
+yarn
+pnpm i
+pip install -r r.txt
+pip list
+python -m venv v
+python -m pytest
+python app.py
+node index.js
+go build ./...
+go test ./...
+cargo test
+cargo build --release
+mvn -q test
+gradle build
+make
+make clean
+cmake .
+dotnet build
+docker ps
+docker images
+docker logs c
+docker build .
+docker run --rm alpine true
+docker compose up -d
+docker compose down
+docker stop c
+docker rm c
+docker exec c ls
+docker image prune
+kubectl get pods
+kubectl describe pod x
+kubectl logs x
+kubectl apply -f x.yaml
+kubectl delete pod x
+kubectl config use-context dev
+helm list
+helm install x y
+helm upgrade x y
+terraform plan
+terraform init
+terraform validate
+terraform fmt
+terraform apply
+terraform output
+terraform state list
+aws s3 ls
+aws s3 cp a s3://b/a
+aws sts get-caller-identity
+aws ec2 describe-instances
+gcloud config list
+az account show
+psql -c 'SELECT 1'
+psql -c 'SELECT * FROM users'
+psql -c 'INSERT INTO t VALUES (1)'
+psql -c 'UPDATE t SET a=1 WHERE id=2'
+psql -c 'DELETE FROM t WHERE id=2'
+mysql -e 'SHOW TABLES'
+sqlite3 db '.tables'
+redis-cli get x
+mongosh --eval 'db.x.find()'
+curl https://example.com
+curl -s https://api.x.com/a | jq .
+curl -o f https://x.com/f
+curl -X POST -d '{}' https://x.com
+wget https://x.com/f
+curl x | grep y
+curl x | head
+ssh host ls
+ssh host 'uptime'
+scp a host:b
+rsync -a src/ dst/
+tar czf a.tgz d
+tar xzf a.tgz
+unzip a.zip
+zip -r a.zip d
+rm file.txt
+rm -f build.log
+rm a b c
+rm -rf node_modules
+rm -rf dist
+rm -rf build
+rm -rf target
+rm -rf .next
+rm -rf coverage
+rm -rf __pycache__
+rm -rf .pytest_cache
+rm -rf /tmp/x
+rm -rf /tmp/build-123
+rm -rf ./tmp
+rm -rf tmp/cache
+rm -r emptydir
+rmdir x
+mkdir -p a/b
+touch a
+cp -r a b
+mv a b
+mv a.txt dir/
+ln -s a b
+chmod +x s.sh
+chmod 644 f
+chmod -R u+rw dir
+chown me f
+grep -r x .
+grep -rn 'rm -rf' .
+find . -name '*.pyc'
+find . -name '*.log' -print
+find . -type f | wc -l
+sed -n 1,5p f
+sed -i 's/a/b/' f.txt
+awk '{print $1}' f
+sort f | uniq
+head f
+tail -f log
+wc -l f
+diff a b
+tee out.txt < in
+cat a > b
+cat a >> b
+echo x > out.txt
+echo x >> out.txt
+echo x > /tmp/f
+echo x > /dev/null
+ls > /dev/null 2>&1
+cmd 2>/dev/null
+ps aux
+top -b -n1
+df -h
+du -sh .
+free -m
+uname -a
+whoami
+id
+env
+which python
+date
+uptime
+kill 1234
+kill -TERM 1234
+pkill myapp
+sleep 1
+systemctl status x
+journalctl -u x
+crontab -l
+history
+export A=1
+A=1 B=2 ls
+source venv/bin/activate
+. ./env.sh
+if [ -f a ]; then echo y; fi
+for f in *.txt; do echo $f; done
+while read l; do echo $l; done < f
+test -d x && echo y
+echo $(date)
+echo `date`
+(cd sub && ls)
+{ echo a; echo b; }
+ls | grep a | wc -l
+true
+false
+exit 0
+python -c 'print(1)'
+python3 -c "import os;print(os.getcwd())"
+node -e 'console.log(1)'
+bash -c 'echo hi'
+sh -c 'ls'
+bash script.sh
+./script.sh
+sudo apt update
+sudo apt install -y x
+sudo systemctl restart x
+brew install x
+apt list
+sudo -l
+gh pr create
+gh pr list
+gh issue list
+gh repo view
+npm publish --dry-run
+git push --dry-run
+docker compose config
+make -n clean
+rm --help
+echo rm -rf /
+git log --grep='rm -rf'
+grep 'DROP TABLE' schema.sql
+man rm
+git commit -m 'fix: DROP TABLE in docs'

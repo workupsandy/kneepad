@@ -40,6 +40,8 @@ _WRAPPERS: Dict[str, Tuple[Set[str], int]] = {
     "npx": ({"-p", "--package", "-c", "--call"}, 0),
     "pnpx": (set(), 0),
     "bunx": (set(), 0),
+    "busybox": (set(), 0),
+    "toybox": (set(), 0),
 }
 
 # Options that consume the next token, per command. Keeps values out of positionals.

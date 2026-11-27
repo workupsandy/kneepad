@@ -59,4 +59,7 @@ def guard(func: Optional[Callable] = None, *, arg: str = "command", allow_ask: b
 
         return inner
 
+    if func is not None and not callable(func):
+        raise TypeError("guard decorates a function: use @guard or @guard(allow_ask=True), not guard('command'). "
+                        "To check a command string use check_command().")
     return wrap(func) if func is not None else wrap

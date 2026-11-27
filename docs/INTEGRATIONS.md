@@ -8,7 +8,7 @@ Contracts below were read from each vendor's public documentation on 2026-11-26.
 
 | level | meaning |
 |---|---|
-| **Contract-tested** | Kneepad's adapter is tested against the payload and response shapes in the vendor docs, and the hook command the installer writes was executed end to end from a clean virtualenv install (`tools/smoke_hook.py`, on Linux here, and on macOS and Windows runners in CI). |
+| **Contract-tested** | Kneepad's adapter is tested against the payload and response shapes in the vendor docs, and the hook command the installer writes was executed end to end from a clean virtualenv install (`tools/smoke_hook.py`, run on Linux, macOS and Windows runners in CI). |
 | **Run in the vendor app** | Someone ran the real vendor application with Kneepad installed and watched it block a command. **No integration has this level yet.** |
 
 Until the second level is reached for an integration, treat it as unproven in production. If you run one, please open an issue with the result so the table can be updated.

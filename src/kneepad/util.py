@@ -76,3 +76,15 @@ def redact(text: str, limit: int = 4096) -> str:
     for pat, repl in _REDACTIONS:
         out = pat.sub(repl, out)
     return out
+
+
+_OURS_RE = re.compile(r"""(?:(?:^|[\s"'/\\&])kneepad(?:\.exe)?|-m\s+kneepad)["']?\s+hook\s+[a-z]+\b""", re.I)
+
+
+def is_kneepad_hook_command(cmd: str) -> bool:
+    """True only for a command that runs Kneepad's own hook (`kneepad hook X` or `python -m kneepad hook X`).
+
+    A user's unrelated command that merely contains the words "kneepad" and "hook" is not ours and must never be
+    removed by `uninstall`.
+    """
+    return _OURS_RE.search(cmd) is not None
