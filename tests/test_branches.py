@@ -178,6 +178,7 @@ class TestCliBranches(Sandbox):
         self.assertEqual((rc, out), (2, ""))
         self.assertTrue(err.strip())
 
+    @unittest.skipIf(sys.platform == "win32", "target `all` includes Cline, which is not installed on Windows")
     def test_init_all_targets_scopes_and_uninstall_roundtrip(self):
         rc, out, err = self.cli("init", "--claude-code", "--target", "all", "--scope", "project")
         self.assertEqual(rc, 0, err)
@@ -286,6 +287,7 @@ class TestCliBranches(Sandbox):
         rc, out, _ = self.cli("badge", "--force", "--out", out_path)
         self.assertEqual(rc, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "POSIX mode bits; Windows relies on the profile ACL (THREAT_MODEL item 12)")
     def test_doctor_variants(self):
         shutil.rmtree(self.state)
         rc, out, _ = self.cli("doctor")
@@ -368,6 +370,7 @@ class TestCliBranches(Sandbox):
         self.assertTrue(os.path.exists("untracked.txt"), "the file must not be deleted when its backup failed")
         self.assertTrue(AuditLog().read_all()[-1]["data"]["refused"])
 
+    @unittest.skipIf(sys.platform == "win32", "Windows runs the real shell as a child process instead of exec (the exit code would be lost)")
     def test_shell_branches(self):
         self.cli("init")
         with mock.patch.object(cli.os, "execv") as ex:
@@ -435,7 +438,7 @@ class TestInstallers(Sandbox):
         self.assertEqual(os.listdir(d), [])
 
     def test_every_target_install_uninstall_idempotent_both_scopes(self):
-        for target in integrations.TARGETS:
+        for target in [t for t in integrations.TARGETS if not (t == "cline" and sys.platform == "win32")]:
             for scope in ("user", "project"):
                 with self.subTest(target=target, scope=scope):
                     self.assertFalse(integrations.is_target_installed(target, scope, self.work))

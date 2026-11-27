@@ -14,6 +14,8 @@ import unittest
 
 from helpers import IsolatedCase, ROOT, SRC  # noqa: F401
 
+import shutil
+
 from kneepad import hook, integrations
 from kneepad.api import KneepadBlocked, check_command, check_mcp, check_write, guard
 
@@ -40,12 +42,17 @@ def payload(target: str, command: str, cwd: str) -> str:
     raise AssertionError(target)
 
 
+_ALL = tuple(t for t in ("claude", "codex", "cursor", "gemini", "copilot", "cline", "generic") if not (t == "cline" and sys.platform == "win32"))
+_NO_ASK = tuple(t for t in ("codex", "cursor", "gemini", "cline") if not (t == "cline" and sys.platform == "win32"))
+REAL_SH = shutil.which("sh") or "/bin/sh"
+
+
 class TestAdapters(IsolatedCase):
     def run_hook(self, target, command):
         return hook.handle(payload(target, command, self.proj), home=self.sb_home, integration=target)
 
     def test_every_target_blocks_a_catastrophic_command(self):
-        for t in ("claude", "codex", "cursor", "gemini", "copilot", "cline", "generic"):
+        for t in _ALL:
             with self.subTest(target=t):
                 code, out = self.run_hook(t, BAD)
                 if t == "generic":
@@ -65,7 +72,7 @@ class TestAdapters(IsolatedCase):
                     self.assertEqual(pd["permissionDecision"], "deny")
 
     def test_benign_command_is_never_blocked(self):
-        for t in ("claude", "codex", "cursor", "gemini", "copilot", "cline", "generic"):
+        for t in _ALL:
             with self.subTest(target=t):
                 code, out = self.run_hook(t, OK)
                 self.assertEqual(code, 0)
@@ -80,7 +87,7 @@ class TestAdapters(IsolatedCase):
                     self.assertNotIn('"ask"', out)
 
     def test_ask_maps_to_deny_where_the_protocol_has_no_ask(self):
-        for t in ("codex", "cursor", "gemini", "cline"):
+        for t in _NO_ASK:
             with self.subTest(target=t):
                 code, out = self.run_hook(t, ASKY)
                 blob = out.lower()
@@ -92,7 +99,7 @@ class TestAdapters(IsolatedCase):
 
     def test_garbage_input_never_means_allow(self):
         # Malformed JSON must never produce an explicit allow, for any adapter.
-        for t in ("claude", "codex", "cursor", "gemini", "copilot", "cline", "generic"):
+        for t in _ALL:
             with self.subTest(target=t):
                 code, out = hook.handle("{not json", home=self.sb_home, integration=t)
                 compact = out.replace(" ", "")
@@ -119,7 +126,7 @@ class TestAdapters(IsolatedCase):
 
 class TestInstallers(IsolatedCase):
     def test_install_uninstall_roundtrip_every_target(self):
-        for t in integrations.TARGETS:
+        for t in [t for t in integrations.TARGETS if not (t == "cline" and sys.platform == "win32")]:
             with self.subTest(target=t):
                 r, path = integrations.install_target(t, "project", self.proj)
                 self.assertEqual(r, "installed")
@@ -184,6 +191,7 @@ class TestInstallers(IsolatedCase):
         self.assertEqual(r, "not-installed")
         self.assertTrue(os.path.exists(path))
 
+    @unittest.skipIf(sys.platform == "win32", "Cline hooks are documented for macOS and Linux only")
     def test_cline_script_is_executable(self):
         _, path = integrations.install_target("cline", "project", self.proj)
         self.assertTrue(os.access(path, os.X_OK))
@@ -191,7 +199,7 @@ class TestInstallers(IsolatedCase):
 
 class TestShellWrapperAndApi(IsolatedCase):
     def sh(self, command):
-        env = dict(os.environ, PYTHONPATH=SRC, KNEEPAD_REAL_SHELL="/bin/sh")
+        env = dict(os.environ, PYTHONPATH=SRC, KNEEPAD_REAL_SHELL=REAL_SH)
         return subprocess.run([sys.executable, "-m", "kneepad", "shell", "-c", command], cwd=self.proj, env=env, capture_output=True, text=True, timeout=60)
 
     def test_wrapper_blocks_with_126(self):
@@ -205,7 +213,7 @@ class TestShellWrapperAndApi(IsolatedCase):
         self.assertEqual(self.sh("exit 7").returncode, 7)
 
     def test_shell_main_entry_point_passes_dash_c(self):
-        env = dict(os.environ, PYTHONPATH=SRC, KNEEPAD_REAL_SHELL="/bin/sh")
+        env = dict(os.environ, PYTHONPATH=SRC, KNEEPAD_REAL_SHELL=REAL_SH)
         code = "import sys; from kneepad.cli import shell_main; sys.argv=['kneepad-shell','-c','echo ok']; sys.exit(shell_main())"
         r = subprocess.run([sys.executable, "-c", code], cwd=self.proj, env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"))

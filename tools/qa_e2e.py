@@ -904,12 +904,20 @@ def sec_perf(quick):
     cmds = ["echo " + "a" * 100000, "ls " + " ".join(f"f{i}" for i in range(14000)), "a | " * 2000 + "b",
             "; ".join(f"echo {i}" for i in range(5000)), "git " + "status " * 14000]
     worst = 0
+    cap = 30000 if os.name == "nt" else None  # CreateProcess caps a command line near 32,767; larger inputs go through stdin below
+    if cap:
+        cmds = [c[:cap] for c in cmds]
+    big = "echo " + "a" * 100000
+    rc, out, err, secs = sb.hook("claude", bash_payload(big, sb.work), timeout=60)
+    check("PRF-003-hook", A, secs < 10 and rc == 0 and no_tb(out, err), f"100 KB command through the hook's stdin: {secs:.2f}s rc={rc}")
     for c in cmds:
         rc, out, err, secs = sb.run(["check", c], timeout=60)
         worst = max(worst, secs)
         check(f"PRF-003-{len(c)}", A, rc in (0, 10, 20) and secs < 10 and no_tb(out, err), f"{len(c)} chars: {secs:.2f}s rc={rc}")
     # ReDoS probes
     for c in ("a" * 50000 + "!", "'" * 50000, "$(" * 3000, "\\" * 50000, "{" * 20000, "(" * 20000):
+        if cap:
+            c = c[:cap]
         rc, out, err, secs = sb.run(["check", c], timeout=60)
         check(f"PRF-004-{c[:2]!r}", A, secs < 10 and rc in (0, 10, 20) and no_tb(out, err), f"{secs:.2f}s rc={rc}")
     rc, out, err, secs = sb.run(["rules", "list"])

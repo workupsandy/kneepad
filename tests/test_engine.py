@@ -1,5 +1,6 @@
 import os
 import stat
+import sys
 import unittest
 
 from helpers import IsolatedCase, make_repo, run_git
@@ -30,7 +31,7 @@ class TestRm(IsolatedCase):
             self.assertEqual(self.action(cmd), "allow", cmd)
 
     def test_ancestor_of_cwd_asks(self):
-        for cmd in ["rm -rf .", "rm -rf ./", "rm -rf $PWD", f"rm -rf {self.proj}"]:
+        for cmd in ["rm -rf .", "rm -rf ./", "rm -rf $PWD", f"rm -rf {self.proj}".replace("\\", "/")]:
             self.assertEqual(self.rule_ids(cmd) & {"fs-rm-ancestor-of-cwd"}, {"fs-rm-ancestor-of-cwd"}, cmd)
         sub = os.path.join(self.proj, "a", "b")
         os.makedirs(sub)
@@ -48,7 +49,8 @@ class TestRm(IsolatedCase):
         self.assertIn("fs-rm-dot-git", self.rule_ids(f"rm -rf {self.proj}/sub/.git"))
 
     def test_non_recursive_rm_of_directories_is_harmless(self):
-        self.assertEqual(self.action("rm /usr"), "allow")  # rm refuses directories without -r
+        if sys.platform != "win32":  # C:\usr does not exist on Windows, so the stricter answer is expected there
+            self.assertEqual(self.action("rm /usr"), "allow")  # rm refuses directories without -r
         self.assertEqual(self.action("rm ~"), "allow")
 
     def test_dynamic_targets(self):
@@ -215,7 +217,7 @@ class TestGit(IsolatedCase):
         other = os.path.join(self.tmp, "other")
         make_repo(other)
         d = self.decide(f"git -C {other} reset --hard", cwd=self.home)
-        self.assertEqual([p.repo for p in d.plans], [os.path.realpath(other)])
+        self.assertEqual([os.path.normcase(os.path.normpath(p.repo)) for p in d.plans], [os.path.normcase(os.path.realpath(other))])
 
     def test_clean_plans_exact_files(self):
         u1, u2 = self.write("u1.txt"), self.write("dir/u2.txt")

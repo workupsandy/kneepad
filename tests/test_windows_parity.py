@@ -130,3 +130,26 @@ class CopyRotation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunQuoting(unittest.TestCase):
+    """`kneepad run -- rm -rf C:\\Users\\me\\proj` was analysed through subprocess.list2cmdline, which leaves backslashes bare;
+    the shell parser read them as escapes, mangled the path and ALLOWED the command (RUN-003 on Windows CI)."""
+
+    def test_backslash_path_is_denied_when_quoted_like_run_does(self):
+        import shlex
+        home = r"C:\Users\RUNNER~1\AppData\Local\Temp\tmpa\sbhome"
+        az = Analyzer(config=Config(), cwd=home + r"\..\work", home=home)
+        d = az.analyze_shell(shlex.join(["rm", "-rf", home]))
+        self.assertEqual(d.action, "deny", d.findings)
+
+    def test_run_builds_its_analysed_text_with_posix_quoting(self):
+        import inspect
+        from kneepad import cli
+        src = inspect.getsource(cli)
+        self.assertNotIn("list2cmdline(argv)", src)
+
+    def test_tilde_uses_the_analysers_own_home(self):
+        az = _az(r"C:\Users\runneradmin\proj")
+        self.assertNotEqual(az.analyze_write_path("~/.npmrc").action, "allow")
+        self.assertNotEqual(az.analyze_write_path("~\\.ssh\\id_rsa").action, "allow")

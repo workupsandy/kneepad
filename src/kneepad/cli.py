@@ -436,7 +436,9 @@ def cmd_run(args) -> int:
     if not argv:
         print("usage: kneepad run [--] COMMAND [ARGS...]", file=sys.stderr)
         return 2
-    text = subprocess.list2cmdline(argv) if sys.platform == "win32" else shlex.join(argv)
+    # POSIX quoting on every platform: the analyser parses shell syntax, and list2cmdline leaves backslash paths unquoted, which
+    # the parser reads as escapes (C:\Users\me\proj became a harmless-looking relative name and `rm -rf` of it was allowed).
+    text = shlex.join(argv)
     if _vet_command(text, "run", interactive_ask=True) != 0:
         return 126
     try:

@@ -236,9 +236,15 @@ class Analyzer:
         self._walk(text, 0)
         return self._finish(text)
 
+    def _tilde(self, path: str) -> str:
+        """Expand a leading ~ with this analyser's own home (os.path.expanduser reads the process environment instead)."""
+        if path == "~" or path.startswith(("~/", "~\\")):
+            return self.home + path[1:]
+        return os.path.expanduser(path) if path.startswith("~") else path
+
     def analyze_write_path(self, path: str) -> Decision:
         self._reset()
-        abs_path = self._abs(os.path.expanduser(path) if path.startswith("~") else path)
+        abs_path = self._abs(self._tilde(path))
         reason = self._protected_reason(abs_path)
         if reason:
             self.emit("fs-protected-path-write", f"{abs_path} ({reason})")
@@ -890,7 +896,7 @@ class Analyzer:
 
     # --------------------------------------------------------------- stdin
     def _read_text(self, path: str, limit: int = 2_000_000) -> Optional[str]:
-        ap = self._abs(os.path.expanduser(path) if path.startswith("~") else path)
+        ap = self._abs(self._tilde(path))
         try:
             if not os.path.isfile(ap) or os.path.getsize(ap) > limit:
                 return None
@@ -955,7 +961,7 @@ class Analyzer:
         if depth + 1 > MAX_DEPTH:
             self.emit("analysis-limit-exceeded", f"nesting deeper than {MAX_DEPTH}")
             return
-        ap = self._abs(os.path.expanduser(path) if path.startswith("~") else path)
+        ap = self._abs(self._tilde(path))
         try:
             if not os.path.isfile(ap) or os.path.getsize(ap) > MAX_SCRIPT_BYTES:
                 return

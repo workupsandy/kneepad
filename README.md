@@ -82,6 +82,6 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) before relying on it. In short
 python3 -m unittest discover -s tests
 ```
 
-402 tests: parser, SQL scanner, every rule example, about 280 everyday commands that must pass silently, about 120 destructive commands that must be stopped, audit tamper fuzzing (every single byte flip is detected), concurrent writers, hostile-repo handling, random-input robustness, and Windows and macOS path and syntax simulation. `python tools/smoke_hook.py` installs the hooks into a throwaway home and runs the written hook command through your real OS shell.
+405 tests: parser, SQL scanner, every rule example, about 280 everyday commands that must pass silently, about 120 destructive commands that must be stopped, audit tamper fuzzing (every single byte flip is detected), concurrent writers, hostile-repo handling, random-input robustness, and Windows and macOS path and syntax simulation. `python tools/smoke_hook.py` installs the hooks into a throwaway home and runs the written hook command through your real OS shell.
 
 Adding a rule: see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). The rule list is in [docs/FOOTGUNS.md](docs/FOOTGUNS.md).

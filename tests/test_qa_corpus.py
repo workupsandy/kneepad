@@ -20,7 +20,7 @@ def load(name, home):
         for line in fh:
             line = line.rstrip("\n")
             if line and not line.startswith("#"):
-                out.append(line.replace("@HOME@", home).replace("\\n", "\n"))
+                out.append(line.replace("@HOME@", home.replace("\\", "/")).replace("\\n", "\n"))
     return out
 
 

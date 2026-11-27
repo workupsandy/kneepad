@@ -45,6 +45,11 @@ Found by an end-to-end QA pass (`tools/qa_e2e.py`) against the installed package
   directory are not system paths.
 - Windows (Git Bash, which Claude Code uses): `/etc`, `/usr`, `/var`, `/sbin` and `/proc` style paths, `~/.bashrc` and the other shell
   startup files, `.git\hooks`, `.git\config`, `.github\workflows` and `.env` files are now protected, matching the POSIX behaviour.
+- Windows: `kneepad run -- rm -rf C:\Users\me\proj` was allowed. `run` built the text it analyses with `subprocess.list2cmdline`,
+  which leaves backslash paths unquoted; the shell parser read the backslashes as escapes, turned the path into a harmless-looking
+  relative name and let the command through. `run` now quotes with POSIX rules on every platform.
+- A leading `~` in a path given to the file-write check is expanded with the analyser's own home directory instead of the process
+  environment, so the two can no longer disagree (they did on Windows when a caller passed `home` explicitly).
 - Config path patterns (`protected_paths`, `allow_write_paths`) now match whether a tool names a file by its real path or through a symlinked
   alias. Found by macOS CI: the working directory is reported as `/private/var/...` while temp paths are spelled `/var/...`, so a
   relative `protected_paths` pattern missed writes made through the alias (a protection bypass).

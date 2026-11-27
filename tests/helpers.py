@@ -30,7 +30,7 @@ class IsolatedCase(unittest.TestCase):
         self.proj = os.path.join(self.tmp, "proj")
         for d in (self.home, self.proj):
             os.makedirs(d)
-        patcher = mock.patch.dict(os.environ, {"HOME": self.home, "KNEEPAD_HOME": self.sb_home}, clear=False)
+        patcher = mock.patch.dict(os.environ, {"HOME": self.home, "USERPROFILE": self.home, "KNEEPAD_HOME": self.sb_home}, clear=False)
         patcher.start()
         self.addCleanup(patcher.stop)
         os.environ.pop("KNEEPAD_MODE", None)

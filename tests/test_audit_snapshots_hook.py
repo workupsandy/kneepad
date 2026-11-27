@@ -30,6 +30,7 @@ class TestAudit(IsolatedCase):
     def test_empty_log_verifies(self):
         self.assertTrue(AuditLog(self.sb_home).verify().ok)
 
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits; Windows relies on the profile ACL (THREAT_MODEL item 12)")
     def test_key_file_is_private(self):
         self.fill(1)
         mode = stat.S_IMODE(os.stat(os.path.join(self.sb_home, "key")).st_mode)
@@ -194,6 +195,7 @@ class TestSnapshots(IsolatedCase):
                 if not os.path.islink(fp) and f != "manifest.json":
                     self.assertNotIn("TOPSECRET", open(fp).read())
 
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits; Windows relies on the profile ACL (THREAT_MODEL item 12)")
     def test_snapshot_dir_is_private(self):
         p = self.write("a.txt")
         SnapshotStore(self.sb_home).create(SnapshotPlan(kind="files", cwd=self.proj, paths=[p]))
