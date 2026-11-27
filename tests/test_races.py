@@ -187,6 +187,7 @@ if __name__ == "__main__":
 class TestBrokenPipe(unittest.TestCase):
     """`kneepad rules list | head -1` must exit 0 and stay silent, whenever the reader leaves (CI: STB-007 on macOS)."""
 
+    @unittest.skipIf(os.name == "nt", "needs a POSIX pipe whose reader can leave early (`| head -1`); Windows cannot pass a raw os.pipe() descriptor to a child")
     def test_reader_leaves_before_exit_flush(self):
         import subprocess
         import time

@@ -153,3 +153,55 @@ class RunQuoting(unittest.TestCase):
         az = _az(r"C:\Users\runneradmin\proj")
         self.assertNotEqual(az.analyze_write_path("~/.npmrc").action, "allow")
         self.assertNotEqual(az.analyze_write_path("~\\.ssh\\id_rsa").action, "allow")
+
+
+class SettingsSharingRetry(unittest.TestCase):
+    """On Windows a second `init` could not replace or read settings.json while the first held it open (Errno 13)."""
+
+    def setUp(self):
+        from kneepad import installer
+        self.inst = installer
+        self.old = installer._RETRY_SHARING
+        installer._RETRY_SHARING = True
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, ".claude", "settings.json")
+
+    def tearDown(self):
+        self.inst._RETRY_SHARING = self.old
+
+    def test_replace_is_retried_until_the_other_process_lets_go(self):
+        from unittest import mock
+        real = os.replace
+        calls = {"n": 0}
+
+        def flaky(a, b):
+            calls["n"] += 1
+            if calls["n"] <= 3:
+                raise PermissionError(13, "Permission denied")
+            return real(a, b)
+
+        with mock.patch.object(self.inst.os, "replace", flaky):
+            self.assertEqual(self.inst.install(self.path, "kneepad hook claude"), "installed")
+        self.assertGreaterEqual(calls["n"], 4)
+        self.assertTrue(self.inst.is_installed(self.path))
+
+    def test_a_permanent_denial_still_raises(self):
+        from unittest import mock
+        with mock.patch.object(self.inst.os, "replace", side_effect=PermissionError(13, "Permission denied")), \
+                mock.patch.object(self.inst.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                self.inst.install(self.path, "kneepad hook claude")
+
+    def test_posix_does_not_retry(self):
+        from unittest import mock
+        self.inst._RETRY_SHARING = False
+        n = {"c": 0}
+
+        def deny(a, b):
+            n["c"] += 1
+            raise PermissionError(13, "Permission denied")
+
+        with mock.patch.object(self.inst.os, "replace", deny):
+            with self.assertRaises(PermissionError):
+                self.inst.install(self.path, "kneepad hook claude")
+        self.assertEqual(n["c"], 1)

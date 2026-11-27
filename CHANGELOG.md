@@ -50,6 +50,9 @@ Found by an end-to-end QA pass (`tools/qa_e2e.py`) against the installed package
   relative name and let the command through. `run` now quotes with POSIX rules on every platform.
 - A leading `~` in a path given to the file-write check is expanded with the analyser's own home directory instead of the process
   environment, so the two can no longer disagree (they did on Windows when a caller passed `home` explicitly).
+- Windows: two `kneepad init` runs at the same moment could fail with "Permission denied" because Windows will not read or replace a
+  file another process has open. The settings writer now retries for about two seconds on Windows (not on POSIX), then gives up with the
+  original error.
 - Config path patterns (`protected_paths`, `allow_write_paths`) now match whether a tool names a file by its real path or through a symlinked
   alias. Found by macOS CI: the working directory is reported as `/private/var/...` while temp paths are spelled `/var/...`, so a
   relative `protected_paths` pattern missed writes made through the alias (a protection bypass).

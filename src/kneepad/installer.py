@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from typing import List
 
 from .util import is_kneepad_hook_command, quote_exe
@@ -40,10 +41,30 @@ def _is_ours(handler: object) -> bool:
     return is_kneepad_hook_command(cmd)
 
 
+_RETRY_SHARING = os.name == "nt"  # Windows refuses to open or replace a file while another process has it open
+
+
+def _retry_sharing(op):
+    """Run ``op`` and, on Windows only, retry for about two seconds when another process holds the file (PermissionError).
+
+    Two parallel `kneepad init` runs read and replace the same settings file; on POSIX that just works, on Windows the loser of
+    the race otherwise fails with "Permission denied" (seen on a CI runner)."""
+    for attempt in range(40):
+        try:
+            return op()
+        except PermissionError:
+            if not _RETRY_SHARING or attempt == 39:
+                raise
+            time.sleep(0.05)
+
+
 def _load(path: str) -> dict:
-    try:
+    def _read() -> str:
         with open(path, "r", encoding="utf-8") as fh:
-            text = fh.read()
+            return fh.read()
+
+    try:
+        text = _retry_sharing(_read)
     except FileNotFoundError:
         return {}
     if not text.strip():
@@ -65,7 +86,7 @@ def _write_atomic(path: str, data: dict) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
             fh.write("\n")
-        os.replace(tmp, path)
+        _retry_sharing(lambda: os.replace(tmp, path))
     except Exception:
         try:
             os.unlink(tmp)
@@ -102,7 +123,7 @@ def install(path: str, command: str) -> str:
         raise InstallError(f"'hooks.PreToolUse' in {path} is not a list; refusing to modify it")
     pre.append({"matcher": MATCHER, "hooks": [{"type": "command", "command": command}]})
     if os.path.exists(path):
-        shutil.copy2(path, path + ".kneepad-bak")
+        _retry_sharing(lambda: shutil.copy2(path, path + ".kneepad-bak"))
     _write_atomic(path, data)
     return "installed"
 
