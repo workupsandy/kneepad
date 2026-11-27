@@ -714,9 +714,7 @@ class Analyzer:
         if ap in HARMLESS_DEVICES or ap.startswith("/dev/fd/"):
             return None
         for pat in self.cfg.allow_write_paths:
-            p = os.path.expanduser(pat)
-            p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
-            if fnmatch.fnmatch(ap, p) or ap == p or ap.startswith(p.rstrip("/") + "/"):
+            if self._config_path_hit(ap, pat):
                 return None
         c = self._ci(ap)
         for rel in PROTECTED_HOME_DIRS:
@@ -746,11 +744,31 @@ class Analyzer:
         if re.match(r"^\.env(\.[A-Za-z0-9_-]+)?$", base) and not base.endswith(ENV_EXAMPLE_SUFFIXES):
             return "environment file with secrets"
         for pat in self.cfg.protected_paths:
-            p = os.path.expanduser(pat)
-            p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
-            if fnmatch.fnmatch(ap, p) or ap == p or ap.startswith(p.rstrip("/") + "/"):
+            if self._config_path_hit(ap, pat):
                 return f"protected by config pattern {pat}"
         return None
+
+    def _config_path_hit(self, ap: str, pat: str) -> bool:
+        """Does `ap` fall under a config path pattern? Compared literally and with symlinks resolved, because the
+        working directory is usually reported resolved (macOS: /private/var/...) while a tool may name the same file
+        through the alias (/var/...). Either spelling must hit."""
+        p = os.path.expanduser(pat)
+        p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
+        aps = [ap]
+        ps = [p]
+        try:
+            ra, rp = os.path.realpath(ap), os.path.realpath(p.rstrip("/") or "/")
+            if ra != ap:
+                aps.append(ra)
+            if rp != p.rstrip("/"):
+                ps.append(rp)
+        except (OSError, ValueError):
+            pass
+        for a in aps:
+            for q in ps:
+                if fnmatch.fnmatch(a, q) or a == q or a.startswith(q.rstrip("/") + "/"):
+                    return True
+        return False
 
     def _check_write_word(self, w: Word, skip_system: bool = False) -> None:
         text, dyn = self._expand_word(w)

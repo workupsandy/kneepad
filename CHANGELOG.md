@@ -34,6 +34,9 @@ Found by an end-to-end QA pass (`tools/qa_e2e.py`) against the installed package
 - `kneepad rules validate` now says it checks structure only; each rule's examples are executed by the test suite.
 - Help text for `init` and `uninstall` flags; README and threat model claims updated (test count, which decisions are logged,
   CI status per platform).
+- Config path patterns (`protected_paths`, `allow_write_paths`) now match whether a tool names a file by its real path or through a symlinked
+  alias. Found by macOS CI: the working directory is reported as `/private/var/...` while temp paths are spelled `/var/...`, so a
+  relative `protected_paths` pattern missed writes made through the alias (a protection bypass).
 - `tools/ci_run_tests.py` reports every failing unit test as a GitHub annotation (readable without downloading logs); the Windows
   job now also runs the whole suite as an informational step.
 - New `tools/qa_e2e.py` (installs into a fresh virtualenv and exercises every command on Linux, macOS and Windows) and
