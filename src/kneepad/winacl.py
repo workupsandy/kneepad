@@ -36,6 +36,10 @@ _NAMES = {
 }
 # Principals that may always have access: SYSTEM, Administrators, CREATOR OWNER, OWNER RIGHTS.
 _ALWAYS_OK = frozenset({"S-1-5-18", "S-1-5-32-544", "S-1-3-0", "S-1-3-4"})
+# SDDL aliases with no fixed SID because they depend on the machine or domain. They are all administrator-level (the local
+# Administrator account, which is also the account GitHub's runners log in as, and the domain/enterprise/schema/cert admins),
+# so they are no wider than the Administrators group that is always allowed.
+_ADMIN_ALIASES = frozenset({"LA", "DA", "EA", "SA", "CA"})
 _ACE = re.compile(r"\(([^;()]*);([^;()]*);([^;()]*);([^;()]*);([^;()]*);([^;()]*)\)")
 
 
@@ -97,7 +101,7 @@ def exposed_principals(sddl: str, me: Optional[str]) -> List[str]:
     for typ, _flags, rights, sid in parse_dacl(sddl):
         if typ not in ("A", "OA") or not rights:
             continue
-        if sid in _ALWAYS_OK or sid == me or sid.startswith("S-1-5-80-"):  # S-1-5-80-*: NT SERVICE accounts such as TrustedInstaller
+        if sid in _ALWAYS_OK or sid in _ADMIN_ALIASES or sid == me or sid.startswith("S-1-5-80-"):  # S-1-5-80-*: NT SERVICE accounts such as TrustedInstaller
             continue
         name = _NAMES.get(sid, sid)
         if name not in seen:

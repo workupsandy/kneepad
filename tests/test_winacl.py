@@ -45,6 +45,16 @@ class Parser(unittest.TestCase):
     def test_sacl_part_is_ignored(self):
         self.assertEqual(winacl.exposed_principals(f"D:P(A;;FA;;;{ME})S:(AU;SA;FA;;;WD)", ME), [])
 
+    def test_local_administrator_alias_is_not_exposure(self):
+        """GitHub's Windows runners log in as the built-in Administrator, whose own ACE is written with the alias LA."""
+        self.assertEqual(winacl.exposed_principals("D:PAI(A;OICI;FA;;;LA)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)", ME), [])
+
+    def test_domain_admin_aliases_are_not_exposure(self):
+        self.assertEqual(winacl.exposed_principals(f"D:P(A;;FA;;;DA)(A;;FA;;;EA)(A;;FA;;;{ME})", ME), [])
+
+    def test_guest_account_is_still_exposure(self):
+        self.assertEqual(winacl.exposed_principals(f"D:P(A;;FA;;;{ME})(A;;FR;;;LG)", ME), ["BUILTIN\\Guests"])
+
     def test_garbage_gives_no_entries(self):
         self.assertEqual(winacl.parse_dacl("not sddl"), [])
 
