@@ -31,14 +31,19 @@ jobs:
           git diff --exit-code
       - name: Tests
         if: runner.os != 'Windows'
-        run: python -m unittest discover -s tests
-      - name: Tests (Windows subset)
-        # Most of the older suite builds POSIX paths and shell scripts; porting it is tracked work. The platform
-        # tests, the rule database examples and the audit tests run here.
+        run: python tools/ci_run_tests.py
+      - name: Tests (Windows subset, gating)
+        # The platform tests, the rule database examples and the audit tests must pass on Windows.
         if: runner.os == 'Windows'
         run: |
-          python -m unittest discover -s tests -p "test_platforms.py"
-          python -m unittest discover -s tests -p "test_rules_db.py"
+          python tools/ci_run_tests.py -p "test_platforms.py"
+          python tools/ci_run_tests.py -p "test_rules_db.py"
+      - name: Tests (Windows full suite, informational)
+        # Most of the older suite builds POSIX paths and shell scripts. Failures here are listed in an annotation so
+        # they can be ported one by one; they do not fail the job.
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: python tools/ci_run_tests.py
       - name: Build and smoke-test the wheel
         run: |
           python -m pip install build
@@ -47,3 +52,13 @@ jobs:
           kneepad --version
           set +e; kneepad check 'terraform destroy -auto-approve'; code=$?; set -e; test $code -eq 20
           python tools/smoke_hook.py
+      - name: End-to-end QA of the built wheel (fresh virtualenv, every command)
+        continue-on-error: ${{ runner.os == 'Windows' }}
+        run: python tools/qa_e2e.py --spec "dist/*.whl" --quick --report qa-report.json
+      - name: Upload QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report-${{ matrix.os }}-py${{ matrix.python }}
+          path: qa-report.json
+          if-no-files-found: ignore
