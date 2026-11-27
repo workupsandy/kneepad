@@ -170,14 +170,15 @@ class Wiring(unittest.TestCase):
             t.assert_not_called()
 
     def test_hook_path_never_shells_out_to_icacls(self):
+        """Creating the state costs one check on Windows; appending to an existing log (every hook call) costs none."""
         from kneepad.audit import AuditLog
         home = tempfile.mkdtemp()
-        with mock.patch.object(winacl, "_run") as r:
-            log = AuditLog(os.path.join(home, "s"))
+        log = AuditLog(os.path.join(home, "s"))
+        log.append("t", {"i": 0})  # creates the directory and the key
+        with mock.patch.object(winacl, "_run", return_value=(1, "")) as r:
             for i in range(3):
                 log.append("t", {"i": i})
-        if os.name != "nt":
-            r.assert_not_called()
+        r.assert_not_called()
 
     def test_doctor_reports_exposure_on_windows(self):
         from kneepad import cli
@@ -198,6 +199,9 @@ class RealWindowsAcl(unittest.TestCase):
         winacl._me_cache.clear()
         self.root = tempfile.mkdtemp()
 
+    def why(self, path):
+        return "sddl=%s trace=%s" % (winacl.read_sddl(path), winacl.trace)
+
     def test_a_directory_made_by_kneepad_is_private(self):
         from kneepad import util
         d = os.path.join(self.root, "state")
@@ -210,8 +214,8 @@ class RealWindowsAcl(unittest.TestCase):
         subprocess.run(["icacls", d, "/grant", "*S-1-1-0:(OI)(CI)R"], capture_output=True)
         rep = winacl.check(d)
         self.assertEqual(rep.status, "exposed", rep.detail)
-        self.assertTrue(winacl.tighten(d, True))
-        self.assertEqual(winacl.check(d).status, "private", winacl.check(d).detail)
+        self.assertTrue(winacl.tighten(d, True), self.why(d))
+        self.assertEqual(winacl.check(d).status, "private", self.why(d))
 
     def test_the_audit_key_is_private(self):
         from kneepad.audit import AuditLog
@@ -228,7 +232,7 @@ class RealWindowsAcl(unittest.TestCase):
             subprocess.run(["icacls", os.path.join(home, "key"), "/grant", "*S-1-1-0:R"], capture_output=True)
             self.assertEqual(winacl.check(os.path.join(home, "key")).status, "exposed")
             self.assertEqual(cli.main(["init"]), 0)
-            self.assertEqual(winacl.check(os.path.join(home, "key")).status, "private")
+            self.assertEqual(winacl.check(os.path.join(home, "key")).status, "private", self.why(os.path.join(home, "key")))
 
     def test_doctor_marks_private_state_ok(self):
         from kneepad import cli

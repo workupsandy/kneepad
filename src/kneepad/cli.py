@@ -557,6 +557,15 @@ def shell_main() -> int:
     return main(["shell"] + sys.argv[1:])
 
 
+def _closed_pipe_error(exc: BaseException) -> bool:
+    """A reader that went away: EPIPE everywhere, and EINVAL on Windows (writing to a closed pipe fails with errno 22 there)."""
+    import errno
+    if isinstance(exc, BrokenPipeError):
+        return True
+    no = getattr(exc, "errno", None)
+    return no == errno.EPIPE or (no == errno.EINVAL and os.name == "nt")
+
+
 def _flush_std(rc: int) -> int:
     """Flush stdout and stderr inside main() so a reader that went away (`kneepad rules list | head -1`) is handled here.
 
@@ -568,12 +577,13 @@ def _flush_std(rc: int) -> int:
             continue
         try:
             stream.flush()
-        except BrokenPipeError:
-            try:
-                os.dup2(os.open(os.devnull, os.O_WRONLY), stream.fileno())
-            except (OSError, ValueError, AttributeError):
-                pass
-        except (OSError, ValueError):
+        except (BrokenPipeError, OSError) as exc:
+            if isinstance(exc, BrokenPipeError) or _closed_pipe_error(exc):
+                try:
+                    os.dup2(os.open(os.devnull, os.O_WRONLY), stream.fileno())
+                except (OSError, ValueError, AttributeError):
+                    pass
+        except ValueError:
             pass
     return rc
 
@@ -600,5 +610,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
     except BrokenPipeError:
         return 0
     except OSError as exc:
+        if _closed_pipe_error(exc):
+            return 0
         print(f"kneepad: error: {exc}", file=sys.stderr)
         return 1

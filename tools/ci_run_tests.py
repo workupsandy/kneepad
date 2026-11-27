@@ -42,7 +42,7 @@ def main(argv: list) -> int:
         body = [l for l in b.strip().splitlines() if l.strip() and not set(l.strip()) <= {"-"}]
         errs = [l.strip() for l in body if re.match(r"\s*[A-Za-z_.]*(Error|Exception|Failure)\b", l)]
         last = errs[-1] if errs else (body[-1].strip() if body else "")
-        lines.append(f"{m.group(1)} {m.group(3)} :: {last[:160]}")
+        lines.append(f"{m.group(1)} {m.group(3)} :: {last[:700]}")
     head = f"{ran.group(0) if ran else 'unittest'}; {summary.group(0) if summary else 'failed'} on {sys.platform}"
     if not os.environ.get("GITHUB_ACTIONS"):
         print(head + " | " + " | ".join(lines))

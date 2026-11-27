@@ -46,13 +46,20 @@ class AclReport:
     detail: str = ""
 
 
+trace: List[str] = []  # the last helper calls and their exit codes, so a failed check can be explained in a test or bug report
+
+
 def _run(args: List[str]) -> Tuple[int, str]:
     """Run a helper program and return (exit code, stdout). Isolated so tests can replace it."""
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace")
-        return p.returncode, p.stdout
-    except (OSError, subprocess.SubprocessError):
-        return 127, ""
+        rc, out = p.returncode, p.stdout
+        note = (p.stdout + p.stderr).strip().replace("\n", " ")[:90]
+    except (OSError, subprocess.SubprocessError) as exc:
+        rc, out, note = 127, "", type(exc).__name__
+    trace.append(f"{' '.join(args[1:3])[:60]} {' '.join(a for a in args[3:])[:70]} -> {rc} {note}")
+    del trace[:-12]
+    return rc, out
 
 
 _me_cache: List[Optional[str]] = []
