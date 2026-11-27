@@ -18,8 +18,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Rule database is in sync with the generators
@@ -57,7 +57,7 @@ jobs:
         run: python tools/qa_e2e.py --spec "dist/*.whl" --quick --report qa-report.json
       - name: Upload QA report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qa-report-${{ matrix.os }}-py${{ matrix.python }}
           path: qa-report.json
