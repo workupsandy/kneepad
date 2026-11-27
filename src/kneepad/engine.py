@@ -709,7 +709,15 @@ class Analyzer:
     # ----------------------------------------------------- protected writes
     def _protected_reason(self, ap: str) -> Optional[str]:
         if winshell.looks_windows(ap):
-            return winshell.protected_reason(ap, self.home, kneepad_home())
+            if any(self._config_path_hit(ap, pat) for pat in self.cfg.allow_write_paths):
+                return None
+            reason = winshell.protected_reason(ap, self.home, kneepad_home())
+            if reason:
+                return reason
+            for pat in self.cfg.protected_paths:
+                if self._config_path_hit(ap, pat):
+                    return f"protected by config pattern {pat}"
+            return None
         home = self.home
         if ap in HARMLESS_DEVICES or ap.startswith("/dev/fd/"):
             return None
@@ -752,6 +760,14 @@ class Analyzer:
         """Does `ap` fall under a config path pattern? Compared literally and with symlinks resolved, because the
         working directory is usually reported resolved (macOS: /private/var/...) while a tool may name the same file
         through the alias (/var/...). Either spelling must hit."""
+        if winshell.looks_windows(ap) or winshell.looks_windows(self.cwd):
+            q = pat.replace("/", "\\")
+            if q == "~" or q.startswith("~\\"):
+                q = self.home.rstrip("\\") + q[1:]
+            if not winshell.looks_windows(q):
+                q = ntpath.join(self.cwd, q)
+            q, a = ntpath.normcase(ntpath.normpath(q)), ntpath.normcase(ntpath.normpath(ap))
+            return fnmatch.fnmatchcase(a, q) or a == q or a.startswith(q.rstrip("\\") + "\\")
         p = os.path.expanduser(pat)
         p = p if os.path.isabs(p) else os.path.join(self.cwd, p)
         aps = [ap]

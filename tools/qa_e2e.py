@@ -78,6 +78,8 @@ class Sandbox:
             return p.returncode, p.stdout, p.stderr, time.perf_counter() - t0
         except subprocess.TimeoutExpired:
             return -999, "", "TIMEOUT", time.perf_counter() - t0
+        except OSError as exc:  # e.g. Windows refuses a command line over about 32,000 characters
+            return -998, "", f"OSERROR {exc}", time.perf_counter() - t0
 
     def hook(self, target, payload, **kw):
         raw = payload if isinstance(payload, str) else json.dumps(payload)
@@ -195,7 +197,7 @@ def sec_check_cmd():
     check("CHK-006", A, no_tb(out, err) and rc in (0, 10, 20), f"unbalanced quote rc={rc}")
     rc, out, err, _ = sb.run(["check", "echo héllo ✓ 日本語; ls"])
     check("CHK-007", A, no_tb(out, err) and rc == 0, f"unicode rc={rc} {err[:150]}")
-    rc, out, err, _ = sb.run(["check", "echo " + "a" * 100000])
+    rc, out, err, _ = sb.run(["check", "echo " + "a" * (30000 if os.name == "nt" else 100000)])  # CreateProcess caps a command line near 32,767
     check("CHK-008", A, no_tb(out, err) and rc in (0, 10, 20), f"100KB argument rc={rc}")
     rc, out, err, _ = sb.run(["check", "echo hi", "--cwd", os.path.join(sb.work, "does-not-exist")])
     check("CHK-009", A, no_tb(out, err), f"--cwd that does not exist rc={rc} {err[-150:]}")

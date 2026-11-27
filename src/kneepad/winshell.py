@@ -163,6 +163,9 @@ WIN_CRED_DIRS = (".ssh", ".aws", ".gnupg", ".kube", ".azure", ".docker", ".confi
 WIN_SYSTEM_TOP = frozenset({
     "windows", "program files", "program files (x86)", "programdata", "system volume information",
     "$recycle.bin", "recovery", "boot", "perflogs", "msocache", "documents and settings", "efi",
+    # POSIX-style absolute paths typed in Git Bash (/etc, /usr, /var) resolve to these on the current drive. Nobody keeps
+    # project files there, so treat them like the Windows system directories.
+    "etc", "usr", "var", "sbin", "proc",
 })
 _CRED_FILE = re.compile(r"(?i)^(id_[a-z0-9_]+|credentials|authorized_keys|config|config\.json|.*\.pem|.*\.key|.*\.pfx|hosts\.yml)$")
 _SHORT_NAME = re.compile(r"[a-z0-9_$!#%&'()@^`{}-]{1,6}~\d+")
@@ -170,6 +173,8 @@ _REGISTRY = re.compile(r"(?i)^(?:registry::)?hk(?:lm|cu|cr|u|cc|ey_[a-z_]+)(?::|
 WIN_PROTECTED_HOME_DIRS = (".ssh", ".aws", ".gnupg", ".kube", ".kneepad")
 WIN_PROTECTED_HOME_FILES = (
     ".netrc", "_netrc", ".npmrc", ".pypirc", ".gitconfig", ".docker\\config.json", ".claude\\settings.json",
+    # Git Bash (what Claude Code uses on Windows) sources these at every start: a classic persistence spot.
+    ".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc", ".zprofile", ".zshenv",
     ".claude\\settings.local.json", "documents\\windowspowershell\\profile.ps1",
     "documents\\windowspowershell\\microsoft.powershell_profile.ps1", "documents\\powershell\\profile.ps1",
     "documents\\powershell\\microsoft.powershell_profile.ps1",
@@ -202,19 +207,42 @@ def norm_path(p: str, cwd: str) -> Optional[str]:
     return ntpath.normpath(p)
 
 
+def _unshort(low: str, h: str) -> str:
+    """Spell the user's own profile folder the way HOME does.
+
+    Windows reports the same folder as C:\\Users\\RUNNER~1 (8.3 short name, common in %TEMP%) or C:\\Users\\runneradmin. Both
+    are the same place, so a path under either must be treated as inside the home directory. Both arguments are lower case."""
+    if not h:
+        return low
+    hd, hrest = ntpath.splitdrive(h)
+    hp = [x for x in hrest.split("\\") if x]
+    ld, lrest = ntpath.splitdrive(low)
+    lp = [x for x in lrest.split("\\") if x]
+    if len(hp) < 2 or hp[0] != "users" or ld != hd or len(lp) < 2 or lp[0] != "users":
+        return low
+    m = re.fullmatch(r"([^~]{1,6})~\d+", lp[1])
+    if not m:
+        return low
+    stem = re.sub(r"[^a-z0-9_$!#%&'()@^`{}-]", "", hp[1])  # short names drop spaces, dots and other illegal characters
+    if not stem.startswith(m.group(1)):
+        return low
+    lp[1] = hp[1]
+    return ld + "\\" + "\\".join(lp)
+
+
 def classify(p: str, cwd: str, home: str) -> str:
     """catastrophic | ancestor | dotgit | creds | system | normal for a normalised Windows path."""
-    low = p.lower().rstrip("\\")
+    h = home.lower().rstrip("\\") if home else ""
+    low = _unshort(p.lower().rstrip("\\"), h)
     drive, rest = ntpath.splitdrive(low)
     parts = [x for x in rest.split("\\") if x]
     if drive.startswith("\\\\"):
         return "catastrophic" if not parts else "normal"
     if len(parts) <= 1:
         return "catastrophic"
-    h = home.lower().rstrip("\\") if home else ""
     if h and (low == h or h.startswith(low + "\\")):
         return "catastrophic"
-    c = cwd.lower().rstrip("\\") if cwd else ""
+    c = _unshort(cwd.lower().rstrip("\\"), h) if cwd else ""
     if c and (c == low or c.startswith(low + "\\")):
         return "ancestor"
     if parts[-1] == ".git":
@@ -224,6 +252,10 @@ def classify(p: str, cwd: str, home: str) -> str:
             base = h + "\\" + d
             if low == base or (low.startswith(base + "\\") and _CRED_FILE.match(parts[-1])):
                 return "creds"
+    if c and low.startswith(c + "\\"):
+        cparts = [x for x in ntpath.splitdrive(c)[1].split("\\") if x]
+        if len(cparts) >= 2 and cparts[0] not in WIN_SYSTEM_TOP and not _SHORT_NAME.fullmatch(cparts[0]):
+            return "normal"  # something inside the project directory the agent was started in
     if parts[0] in WIN_SYSTEM_TOP or _SHORT_NAME.fullmatch(parts[0]):
         return "system"  # a top-level 8.3 short name (PROGRA~1, DOCUME~1) is almost always a system directory
     if parts[0] == "users" and not (h and (low == h or low.startswith(h + "\\"))):
@@ -233,8 +265,8 @@ def classify(p: str, cwd: str, home: str) -> str:
 
 def protected_reason(p: str, home: str, kneepad_dir: str) -> Optional[str]:
     """Why a write to this normalised Windows path needs a decision, or None."""
-    low = p.lower()
     h = home.lower().rstrip("\\") if home else ""
+    low = _unshort(p.lower(), h)
     sd = kneepad_dir.lower().rstrip("\\") if kneepad_dir else ""
     if sd and (low == sd or low.startswith(sd + "\\")):
         return "Kneepad's own state"
@@ -256,9 +288,17 @@ def protected_reason(p: str, home: str, kneepad_dir: str) -> Optional[str]:
     parts = [x for x in rest.split("\\") if x]
     if parts and (parts[0] in WIN_SYSTEM_TOP or _SHORT_NAME.fullmatch(parts[0])):
         return "system path"
+    for i in range(len(parts) - 1):
+        pair = (parts[i], parts[i + 1])
+        if pair in ((".git", "hooks"), (".git", "config"), (".github", "workflows")):
+            return f"{pair[0]}\\{pair[1]}"
+        if parts[i] == ".claude" and parts[i + 1] in ("settings.json", "settings.local.json"):
+            return "agent settings"
     base = parts[-1] if parts else ""
     if base == ".kneepad.toml":
         return "Kneepad project config"
+    if re.match(r"^\.env(\.[a-z0-9_-]+)?$", base) and not base.endswith((".example", ".sample", ".template", ".dist")):
+        return "environment file with secrets"
     return None
 
 

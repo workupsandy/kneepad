@@ -46,4 +46,4 @@ Kneepad is built for one failure: a well-meaning agent (or a tired human) runnin
 
 ## "0 bugs"
 
-No one can honestly promise that. What exists instead: 384 automated tests, an example-driven rule database that cannot drift from its documentation, byte-level tamper fuzzing, randomized input fuzzing for crashes and slowness, and the explicit limits above. During development the test suite found and fixed real defects, including an audit-rotation crash, a pipeline walk-back miss in `curl | tee | sh`, and several rule false positives. More will turn up in real use.
+No one can honestly promise that. What exists instead: 402 automated tests, an example-driven rule database that cannot drift from its documentation, byte-level tamper fuzzing, randomized input fuzzing for crashes and slowness, and the explicit limits above. During development the test suite found and fixed real defects, including an audit-rotation crash, a pipeline walk-back miss in `curl | tee | sh`, and several rule false positives. More will turn up in real use.

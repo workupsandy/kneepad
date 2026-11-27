@@ -537,7 +537,32 @@ def shell_main() -> int:
     return main(["shell"] + sys.argv[1:])
 
 
+def _flush_std(rc: int) -> int:
+    """Flush stdout and stderr inside main() so a reader that went away (`kneepad rules list | head -1`) is handled here.
+
+    A broken pipe caught earlier still leaves the final partial buffer pending; the interpreter would then fail to flush it
+    at exit and print "Exception ignored ... BrokenPipeError" with exit status 120. Pointing the descriptor at /dev/null
+    (the recipe from the Python documentation) makes that exit-time flush harmless."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.flush()
+        except BrokenPipeError:
+            try:
+                os.dup2(os.open(os.devnull, os.O_WRONLY), stream.fileno())
+            except (OSError, ValueError, AttributeError):
+                pass
+        except (OSError, ValueError):
+            pass
+    return rc
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    return _flush_std(_main(argv))
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     # `shell` and `run` forward arbitrary arguments (including -c and other dash options) to another
     # program, which argparse cannot express with REMAINDER when the first token starts with a dash.

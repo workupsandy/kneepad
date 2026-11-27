@@ -32,6 +32,7 @@ from .util import ensure_private_dir, now_iso, kneepad_home
 GENESIS = "0" * 64
 _BIN = getattr(os, "O_BINARY", 0)  # Windows translates newlines unless the descriptor is binary
 VERSION = 1
+_COPY_ROTATION = os.name == "nt"  # Windows cannot rename a file that is open; see AuditLog._set_aside
 
 try:  # POSIX
     import fcntl
@@ -181,6 +182,33 @@ class AuditLog:
             return True
         return (a.st_ino, a.st_dev) == (b.st_ino, b.st_dev)
 
+    def _set_aside(self, fd: int, dest: str) -> None:
+        """Move the corrupt log out of the way while this writer still holds it open and locked.
+
+        POSIX renames the file. Windows refuses to rename a file that any handle has open (WinError 32), including ours, so
+        there the evidence is copied to ``dest`` and the live file is emptied in place; peers waiting on the lock then see
+        an empty log and start a fresh chain, exactly as they do after a rename."""
+        if not _COPY_ROTATION:
+            os.replace(self.path, dest)
+            return
+        size = os.fstat(fd).st_size
+        out = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BIN, 0o600)
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            left = size
+            while left > 0:
+                chunk = os.read(fd, min(left, 1 << 20))
+                if not chunk:
+                    break
+                view = memoryview(chunk)
+                while view:
+                    view = view[os.write(out, view):]
+                left -= len(chunk)
+            os.fsync(out)
+        finally:
+            os.close(out)
+        os.ftruncate(fd, 0)
+
     def _append(self, event: str, data: Dict[str, Any], only_if_empty: bool = False) -> Optional[Dict[str, Any]]:
         key = self.ensure_key()
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_APPEND | _BIN, 0o600)
@@ -207,7 +235,7 @@ class AuditLog:
                         while os.path.exists(dest):
                             n += 1
                             dest = f"{self.path}.corrupt-{int(time.time())}-{n}"
-                        os.replace(self.path, dest)
+                        self._set_aside(fd, dest)
                         raise _Rotated()
                 seq = (last["seq"] + 1) if last else 1
                 prev = last["hash"] if last else GENESIS

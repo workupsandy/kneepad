@@ -34,6 +34,17 @@ Found by an end-to-end QA pass (`tools/qa_e2e.py`) against the installed package
 - `kneepad rules validate` now says it checks structure only; each rule's examples are executed by the test suite.
 - Help text for `init` and `uninstall` flags; README and threat model claims updated (test count, which decisions are logged,
   CI status per platform).
+- `kneepad rules list | head -1` (any reader that closes early) no longer ends with "Exception ignored ... BrokenPipeError" and exit
+  status 120: stdout and stderr are flushed inside `main`, and a broken pipe redirects the descriptor to the null device. Found by macOS CI
+  (STB-007); it depends on timing, so it can also happen on Linux.
+- Windows: the corrupt-tail rotation of the audit log failed with `WinError 32` because Windows cannot rename a file that is open. The
+  corrupt log is now copied aside and the live file emptied in place, so the log recovers instead of staying corrupt.
+- Windows: `protected_paths` and `allow_write_paths` were ignored for Windows paths. They now apply, case-insensitively.
+- Windows: a path under the user's own profile spelled with an 8.3 short name (`C:\Users\RUNNER~1\...`, common in `%TEMP%`) was treated
+  as a system directory, so every `rm` there asked. Short profile names now resolve to the home directory, and files inside the project
+  directory are not system paths.
+- Windows (Git Bash, which Claude Code uses): `/etc`, `/usr`, `/var`, `/sbin` and `/proc` style paths, `~/.bashrc` and the other shell
+  startup files, `.git\hooks`, `.git\config`, `.github\workflows` and `.env` files are now protected, matching the POSIX behaviour.
 - Config path patterns (`protected_paths`, `allow_write_paths`) now match whether a tool names a file by its real path or through a symlinked
   alias. Found by macOS CI: the working directory is reported as `/private/var/...` while temp paths are spelled `/var/...`, so a
   relative `protected_paths` pattern missed writes made through the alias (a protection bypass).

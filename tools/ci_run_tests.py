@@ -42,16 +42,27 @@ def main(argv: list) -> int:
         body = [l for l in b.strip().splitlines() if l.strip() and not set(l.strip()) <= {"-"}]
         errs = [l.strip() for l in body if re.match(r"\s*[A-Za-z_.]*(Error|Exception|Failure)\b", l)]
         last = errs[-1] if errs else (body[-1].strip() if body else "")
-        lines.append(f"{m.group(1)} {m.group(3)} :: {last[:200]}")
+        lines.append(f"{m.group(1)} {m.group(3)} :: {last[:160]}")
     head = f"{ran.group(0) if ran else 'unittest'}; {summary.group(0) if summary else 'failed'} on {sys.platform}"
-    msg = head + " | " + " | ".join(lines[:25])
-    if len(lines) > 25:
-        msg += f" | ... and {len(lines) - 25} more"
-    if os.environ.get("GITHUB_ACTIONS"):
-        msg = msg.replace("%", "%25").replace("\r", " ").replace("\n", " ")
-        print(f"::error title=unit tests failed::{msg[:3500]}", flush=True)
-    else:
-        print(msg)
+    if not os.environ.get("GITHUB_ACTIONS"):
+        print(head + " | " + " | ".join(lines))
+        return p.returncode
+    # One annotation holds about 4,000 characters and a step shows at most ten, so split the list across several. Anyone
+    # reading the run through the public API then sees every failing test, not just the first screenful.
+    short = [l.replace("test_", "", 1) if l.startswith(("FAIL test_", "ERROR test_")) else l for l in lines]
+    chunks, cur = [], ""
+    for l in short:
+        if cur and len(cur) + len(l) + 3 > 3200:
+            chunks.append(cur)
+            cur = ""
+        cur += (" | " if cur else "") + l
+    if cur:
+        chunks.append(cur)
+    chunks = chunks[:9]
+    print(f"::error title=unit tests failed::{head} | {len(lines)} failing, listed in {len(chunks)} annotation(s)", flush=True)
+    for i, c in enumerate(chunks, 1):
+        c = c.replace("%", "%25").replace("\r", " ").replace("\n", " ")
+        print(f"::error title=unit tests failed ({i}/{len(chunks)})::{c}", flush=True)
     return p.returncode
 
 

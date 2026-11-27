@@ -182,3 +182,28 @@ class TestInstallRaces(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBrokenPipe(unittest.TestCase):
+    """`kneepad rules list | head -1` must exit 0 and stay silent, whenever the reader leaves (CI: STB-007 on macOS)."""
+
+    def test_reader_leaves_before_exit_flush(self):
+        import subprocess
+        import time
+        src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+        code = ("import sys,time;sys.path.insert(0,%r);from kneepad.cli import main\n"
+                "rc=main(['rules','list'])\n"
+                "time.sleep(0.5)\n"
+                "sys.exit(rc)") % src
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+        r, w = os.pipe()
+        p = subprocess.Popen([sys.executable, "-c", code], stdout=w, stderr=subprocess.PIPE, env=env)
+        os.close(w)
+        time.sleep(0.3)
+        os.read(r, 100)
+        os.close(r)
+        err = p.stderr.read().decode()
+        rc = p.wait()
+        p.stderr.close()
+        self.assertEqual(err.strip(), "", err)
+        self.assertEqual(rc, 0)
