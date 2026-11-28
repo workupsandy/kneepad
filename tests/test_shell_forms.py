@@ -76,7 +76,7 @@ class TestCd(IsolatedCase):
         other = os.path.join(self.tmp, "other")
         os.makedirs(os.path.join(other, "stuff"))
         self.write("stuff/x", base=other)
-        d = self.decide(f"cd {other} && rm -rf stuff")
+        d = self.decide(f"cd '{other}' && rm -rf stuff")  # single quotes keep Windows backslashes literal
         paths = [p for plan in d.plans for p in plan.paths]
         self.assertEqual(paths, [os.path.join(other, "stuff")])
 
