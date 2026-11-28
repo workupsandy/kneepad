@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4
+Fixes for two regressions in 0.3.3, found by a code review of the released commit.
+- Fix: `cd` handling could drop a safety copy. A command is now judged twice when it contains a `cd`: once following the `cd`
+  and once ignoring it, and the results are combined. A wrong guess about where the shell ends up (subshell
+  `(cd x && ls) && rm -rf *`, `cd -`, `popd`, a pipeline, a background `cd x &`, a branch that never runs) can add a prompt or
+  a safety copy but can no longer remove the one the starting folder needs. Two different safety copies in one command are no
+  longer merged into one.
+- Fix: dry-run exemptions treated a switched-off flag as a preview. `helm uninstall --dry-run=false` or `=none`,
+  `git push --force --dry-run --no-dry-run` and `aws s3 rm --dryrun --no-dryrun` are real runs and are checked again. Bare
+  `--dry-run`, `--dry-run=true|client|server`, `-n` and `--dryrun` still pass.
+- Trade-off: `cd build && rm -rf *` again plans a copy of the starting folder as well as the new one, as 0.3.2 did.
+- 470 tests (464 run on Linux, 6 skipped by design).
+
 ## 0.3.3
 Gaps found by running 0.3.2 against real agent habits, plus a prompt before an agent removes Kneepad itself.
 - Fix: brace expansion in `rm` arguments. `rm -rf ./{src,docs}` and `rm -rf ~/{Documents,Pictures}` passed with no safety copy

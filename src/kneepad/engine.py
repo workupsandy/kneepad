@@ -165,17 +165,32 @@ class Decision:
         return "\n".join(lines)
 
 
+def _preview_flag(pa: ParsedArgv, flag: str, values: Tuple[str, ...] = ()) -> bool:
+    """True if ``flag`` is on: bare, or ``flag=VALUE`` with a listed preview value, and never switched off again."""
+    seen: List[str] = []
+    for t in pa.tokens:
+        if t == "--":
+            break
+        if t == flag or t.startswith(flag + "=") or t == "--no-" + flag[2:]:
+            seen.append(t)
+    allowed = {flag} | {f"{flag}={v}" for v in values}
+    # Any off or unknown spelling anywhere (``=false``, ``=none``, ``--no-...``) means: do not treat it as a preview.
+    return bool(seen) and all(t in allowed for t in seen)
+
+
 def _is_dry_run(pa: ParsedArgv) -> bool:
     """Commands whose own dry-run flag guarantees nothing is changed."""
     if pa.name == "git" and pa.pos[:1] == ["push"]:
-        return bool({"--dry-run", "-n"} & pa.flags)
+        if "--no-dry-run" in pa.tokens:
+            return False
+        return "-n" in pa.flags or _preview_flag(pa, "--dry-run")
     if pa.name == "helm" and pa.pos[:1] in (["uninstall"], ["delete"], ["un"], ["rollback"]):
-        return "--dry-run" in pa.flags
+        return _preview_flag(pa, "--dry-run", ("true", "client", "server"))
     if pa.name == "aws":
         if pa.pos[:1] == ["s3"] and pa.pos[1:2] in (["rm"], ["mv"], ["sync"], ["cp"]):
-            return "--dryrun" in pa.flags
+            return _preview_flag(pa, "--dryrun")
         if pa.pos[:1] == ["ec2"]:
-            return "--dry-run" in pa.flags
+            return _preview_flag(pa, "--dry-run")
     return False
 
 
@@ -211,6 +226,8 @@ class Analyzer:
         self.vars: Dict[str, str] = {}
         self._script_depth = 0
         self._seen: set = set()
+        self._follow_cd = True
+        self._cd_moved = False
 
     def emit(self, rule_id: str, detail: str = "", plan: Optional[SnapshotPlan] = None, note: str = "") -> None:
         r = self.by_id[rule_id]
@@ -226,7 +243,9 @@ class Analyzer:
         esc = self.cfg.escalations.get(rule_id)
         if esc:
             action = stronger(action, esc)
-        key = (rule_id, detail)
+        # The plan is part of the key: ``detail`` is truncated, and two different safety copies must never collapse into one.
+        what = None if plan is None else (plan.kind, plan.cwd, plan.repo, tuple(plan.paths), tuple(plan.branches))
+        key = (rule_id, detail, what)
         if key in self._seen:
             return
         self._seen.add(key)
@@ -248,7 +267,7 @@ class Analyzer:
         for r in self._raw:
             if re.search(r.match["raw_regex"], text):
                 self.emit(r.id, text[:120])
-        self._walk(text, 0)
+        self._walk_command(text)
         return self._finish(text)
 
     def _tilde(self, path: str) -> str:
@@ -276,7 +295,7 @@ class Analyzer:
         if re.search(r"shell|bash|terminal|run_command|exec|command", lname):
             for k, s in strings:
                 if k.split(".")[-1].lower() in ("command", "cmd", "script", "code", "args", "input"):
-                    self._walk(s[:MAX_SRC], 0)
+                    self._walk_command(s[:MAX_SRC])
         if re.search(r"mongo", lname):
             for _k, s in strings:
                 self._scan_mongo_like(s)
@@ -325,6 +344,22 @@ class Analyzer:
         return Decision(action=action, findings=self.findings, plans=plans, notes=self.notes, mode=self.cfg.mode)
 
     # ------------------------------------------------------------------- walk
+    def _walk_command(self, src: str) -> None:
+        """Analyse a command with ``cd`` followed, then, if that moved anything, again with ``cd`` ignored.
+
+        Following ``cd`` is a guess: subshells, pipelines, ``popd``, ``cd -`` and branches that never run all leave
+        the shell somewhere else. The results are combined, so a wrong guess can add a prompt or a safety copy
+        but can never remove one that the hook's own directory calls for.
+        """
+        before = dict(self.vars)
+        self._follow_cd, self._cd_moved = True, False
+        self._walk(src, 0)
+        if self._cd_moved:
+            self.vars = before
+            self._follow_cd = False
+            self._walk(src, 0)
+            self._follow_cd = True
+
     def _walk(self, src: str, depth: int) -> None:
         if depth > MAX_DEPTH:
             self.emit("analysis-limit-exceeded", f"nesting deeper than {MAX_DEPTH}")
@@ -358,7 +393,7 @@ class Analyzer:
         if meta.get("query") or not norm:
             return
         name0 = cmd_name(norm[0].text)
-        if name0 in ("cd", "pushd", "chdir"):
+        if name0 in ("cd", "pushd", "chdir") and self._follow_cd:
             self._track_cd(norm[1:])
             return
         if name0 in ("export", "declare", "local", "readonly", "typeset"):
@@ -398,6 +433,7 @@ class Analyzer:
             target = w
             break
         if target is None:
+            self._cd_moved = self._cd_moved or self.cwd != self.home
             self.cwd = self.home
             return
         text, dyn = self._expand_word(target)
@@ -405,6 +441,7 @@ class Analyzer:
             return
         new = self._abs(text)
         if os.path.isdir(new) or self._classify(new) != "normal":
+            self._cd_moved = self._cd_moved or new != self.cwd
             self.cwd = new
 
     def _record_assignments(self, words: List[Word]) -> None:
