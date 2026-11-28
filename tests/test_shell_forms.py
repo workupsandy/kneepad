@@ -216,5 +216,25 @@ class TestRegressions034(IsolatedCase):
         self.assertEqual(len([p for p in self.decide("cd src && rm -rf *").plans if p.kind == "files"]), 2)
 
 
+class TestPreviewFlagIsNotAlwaysAFlag(IsolatedCase):
+    def test_real_runs_are_not_exempt(self):
+        for cmd in (
+            "git push origin main --force -o --dry-run",
+            "git push origin main --force --push-option --dry-run",
+            "git push origin main --force -o -n",
+            "git push --force origin main --dry-run --no-dry",
+        ):
+            self.assertEqual(self.decide(cmd).action, "deny", cmd)
+        self.assertNotEqual(self.decide("helm uninstall api --description --dry-run").action, "allow")
+
+    def test_real_previews_stay_exempt(self):
+        for cmd in (
+            "git push --force origin main -o ci.skip --dry-run",
+            "git push --force origin main -n",
+            "helm uninstall api --description cleanup --dry-run",
+        ):
+            self.assertEqual(self.decide(cmd).action, "allow", cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

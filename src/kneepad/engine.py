@@ -178,13 +178,25 @@ def _preview_flag(pa: ParsedArgv, flag: str, values: Tuple[str, ...] = ()) -> bo
     return bool(seen) and all(t in allowed for t in seen)
 
 
+# Options that take the next word as their value, so a flag written right after one is only text.
+_GIT_PUSH_VALUE_OPTS = ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
+_HELM_VALUE_OPTS = ("--description",)
+
+
+def _flag_used_as_value(pa: ParsedArgv, value_opts: Tuple[str, ...]) -> bool:
+    return any(a in value_opts and b.startswith(("-n", "--dry-run")) for a, b in zip(pa.tokens, pa.tokens[1:]))
+
+
 def _is_dry_run(pa: ParsedArgv) -> bool:
     """Commands whose own dry-run flag guarantees nothing is changed."""
     if pa.name == "git" and pa.pos[:1] == ["push"]:
-        if "--no-dry-run" in pa.tokens:
+        # git accepts shortened long options, so ``--no-dry`` also switches the preview off.
+        if any(t.startswith("--no-d") for t in pa.tokens) or _flag_used_as_value(pa, _GIT_PUSH_VALUE_OPTS):
             return False
         return "-n" in pa.flags or _preview_flag(pa, "--dry-run")
     if pa.name == "helm" and pa.pos[:1] in (["uninstall"], ["delete"], ["un"], ["rollback"]):
+        if _flag_used_as_value(pa, _HELM_VALUE_OPTS):
+            return False
         return _preview_flag(pa, "--dry-run", ("true", "client", "server"))
     if pa.name == "aws":
         if pa.pos[:1] == ["s3"] and pa.pos[1:2] in (["rm"], ["mv"], ["sync"], ["cp"]):

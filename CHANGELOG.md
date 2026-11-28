@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.5
+Three rare forms that 0.3.4 let through as previews, found by a review of the released 0.3.4 diff, and a flaky test.
+- Fix: a preview flag written as another option's value is not a preview. `git push --force -o --dry-run` (also
+  `--push-option`, `--repo`, `--receive-pack`, `--exec`, or `-n` as the value) and `helm uninstall api --description --dry-run`
+  are real runs and are checked again.
+- Fix: git accepts shortened long options, so `git push --force --dry-run --no-dry` switches the preview off and is checked
+  again. `git push --force -o ci.skip --dry-run`, `-n` and `helm uninstall --description cleanup --dry-run` still pass.
+- Known misses: bundled short options such as `-fo`, and value options not in the two lists above.
+- Tests: `test_prune` no longer depends on the Windows clock having moved between create and prune.
+- 472 tests.
+
 ## 0.3.4
 Fixes for two regressions in 0.3.3, found by a code review of the released commit.
 - Fix: `cd` handling could drop a safety copy. A command is now judged twice when it contains a `cd`: once following the `cd`

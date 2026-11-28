@@ -291,7 +291,8 @@ class TestSnapshots(IsolatedCase):
         for _ in range(3):
             store.create(SnapshotPlan(kind="files", cwd=self.proj, paths=[p]))
         self.assertEqual(len(store.list()), 3)
-        store.prune(older_than_days=0.0)
+        # A negative age removes everything even when the clock has not moved since create (coarse Windows timer).
+        store.prune(older_than_days=-1.0)
         self.assertEqual(store.list(), [])
 
     def test_path_traversal_in_id_is_rejected(self):
