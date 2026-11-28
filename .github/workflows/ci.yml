@@ -2,7 +2,9 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/blog/**']
   pull_request:
+    paths-ignore: ['docs/blog/**']
 jobs:
   test:
     runs-on: ${{ matrix.os }}
