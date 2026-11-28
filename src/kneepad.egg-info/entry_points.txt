@@ -1,3 +1,0 @@
-[console_scripts]
-kneepad = kneepad.cli:main
-kneepad-shell = kneepad.cli:shell_main
