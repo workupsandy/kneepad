@@ -1,0 +1,66 @@
+# Hand-written. Rules that stop an agent from quietly removing Kneepad itself.
+# Known misses are listed in docs/THREAT_MODEL.md; this is a prompt for the common forms, not a lock.
+
+[[rule]]
+id = "kneepad-self-uninstall"
+title = "kneepad uninstall (removes the safety hooks)"
+family = "kneepad"
+severity = "high"
+action = "ask"
+why = "kneepad uninstall removes the hooks that are checking this command. An agent that removes its own seatbelt should be a decision you make, not one it makes."
+safer = "Run kneepad uninstall yourself in a terminal if you really want it gone."
+reversible = "yes"
+[rule.match]
+cmd = ["kneepad", "kneepad-shell"]
+pos_any = ["uninstall"]
+[rule.examples]
+match = ["kneepad uninstall", "kneepad uninstall --all", "kneepad-shell uninstall"]
+no_match = ["kneepad check 'ls'", "kneepad doctor", "echo kneepad uninstall"]
+
+[[rule]]
+id = "kneepad-self-pip-uninstall"
+title = "removing the kneepad package with pip, pipx, uv or poetry"
+family = "kneepad"
+severity = "high"
+action = "ask"
+why = "Uninstalling the package deletes the checker the hooks call, so every later command runs without a check or fails open depending on the agent."
+safer = "Remove it yourself in a terminal if you mean to. Agents should not remove their own guard."
+reversible = "yes"
+[rule.match]
+cmd_re = '(?:pip|pip3|pipx|uv|poetry|conda|mamba)'
+args_regex = '(?:^|\s)(?:uninstall|remove|rm)\b(?:\s+\S+)*?\s+kneepad(?:\s|$|[=<>~])'
+[rule.examples]
+match = ["pip uninstall -y kneepad", "pip3 uninstall kneepad", "pipx uninstall kneepad", "uv pip uninstall kneepad", "uv tool uninstall kneepad", "poetry remove kneepad"]
+no_match = ["pip install kneepad", "pip uninstall requests", "pipx install kneepad", "pip show kneepad"]
+
+[[rule]]
+id = "kneepad-self-python-m-uninstall"
+title = "python -m pip uninstall kneepad, or python -m kneepad uninstall"
+family = "kneepad"
+severity = "high"
+action = "ask"
+why = "Same as removing the package directly, spelled through the interpreter."
+safer = "Remove it yourself in a terminal if you mean to."
+reversible = "yes"
+[rule.match]
+cmd = ["python"]
+args_regex = '(?:^|\s)-[A-Za-z]*m\s+(?:(?:pip|pipx|uv)\s+(?:\S+\s+)*?(?:uninstall|remove)\b(?:\s+\S+)*?\s+kneepad(?:\s|$)|kneepad(?:\.cli)?\s+uninstall\b)'
+[rule.examples]
+match = ["python -m pip uninstall -y kneepad", "python3 -m pip uninstall kneepad", "python -m kneepad uninstall", "python3 -m pipx uninstall kneepad"]
+no_match = ["python -m pip install kneepad", "python -m pip uninstall requests", "python -m kneepad check ls"]
+
+[[rule]]
+id = "kneepad-self-remove-state"
+title = "deleting the Kneepad state directory"
+family = "kneepad"
+severity = "high"
+action = "ask"
+why = "~/.kneepad holds the audit log, its key and the snapshots. Removing it erases the evidence of what the agent did and every restore point."
+safer = "Back it up first, or remove it yourself in a terminal."
+reversible = "no"
+[rule.match]
+cmd = ["rm", "unlink", "rmdir", "mv", "shred"]
+args_regex = '(?:^|[\s/"\x27])\.kneepad(?:[/\s"\x27]|$)'
+[rule.examples]
+match = ["rm -rf ~/.kneepad", "rm -rf $HOME/.kneepad/snapshots", "mv ~/.kneepad /tmp/x"]
+no_match = ["ls ~/.kneepad", "rm -rf ./build", "cat ~/.kneepad/config.toml"]

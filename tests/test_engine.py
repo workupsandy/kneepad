@@ -21,8 +21,6 @@ class TestRm(IsolatedCase):
             "command rm -rf /", "/bin/rm -rf /", "\\rm -rf /", "nohup rm -rf / &", "rm -rf --no-preserve-root /",
             "cd / && rm -rf *", "true; rm -rf /",
         ]:
-            if cmd == "cd / && rm -rf *":
-                continue  # `cd` changes directory at runtime; documented limit, covered below
             self.assertEqual(self.action(cmd), "deny", cmd)
 
     def test_quoted_text_is_not_a_command(self):

@@ -422,10 +422,10 @@ def sec_consistency():
     # determinism
     outs = {sb.run(["check", "terraform destroy", "--json"])[1] for _ in range(5)}
     check("CON-002", A, len(outs) == 1, "same input must give byte-identical output")
-    # README vs `rules list`: 249 rules claimed (216 pattern + 33 engine-emitted)
+    # README vs `rules list`: 253 rules claimed (220 pattern + 33 engine-emitted)
     rc, out, err, _ = sb.run(["rules", "list"])
     n = len([l for l in out.splitlines() if l.strip()])
-    check("CON-003", A, rc == 0 and n >= 200, f"`rules list` prints {n} rules; README claims 249 (216 pattern + 33 engine)", sev="minor")
+    check("CON-003", A, rc == 0 and n >= 200, f"`rules list` prints {n} rules; README claims 253 (220 pattern + 33 engine)", sev="minor")
     CTX["rules_listed"] = n
     sb.cleanup()
 

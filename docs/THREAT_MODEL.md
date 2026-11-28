@@ -19,7 +19,7 @@ Kneepad is built for one failure: a well-meaning agent (or a tired human) runnin
 
 ## Known limits
 
-1. **`cd` is not modelled.** `cd /tmp && rm -rf *` resolves `*` against the hook's working directory, not `/tmp`. Absolute paths are always evaluated correctly.
+1. **`cd` is modelled only when the target is a literal.** `cd /tmp && rm -rf *` resolves `*` against `/tmp`. `cd "$DIR"`, `cd -` and a `cd` hidden inside a script or function are not followed, and relative paths after them resolve against the hook's working directory. Absolute paths are always evaluated correctly.
 2. **Followed scripts only count high and critical findings**, and only files up to 64 KB. Medium findings are reported as notes. This avoids blocking every build script.
 3. **SQL inside `$$ ... $$` function bodies and stored procedures is opaque.**
 4. **SQL detection is lexical.** It handles comments, quotes, dollar quoting and `WHERE 1=1` style tautologies, but cannot evaluate expressions.
@@ -32,6 +32,7 @@ Kneepad is built for one failure: a well-meaning agent (or a tired human) runnin
 11. **Snapshots on Windows** copy files with the standard library, so they need to be able to read the files and cannot record symbolic links without the symlink privilege (the command asks instead).
 12. **File permissions** of the audit key and state directory are enforced with POSIX modes on Linux and macOS. On Windows they are access-control lists: Kneepad reads the ACL with `icacls` when it creates the state directory or the key, in `kneepad init`, and in `kneepad doctor`, and removes access for anyone other than you, SYSTEM and Administrators if it finds any (a folder under your profile is already private; `KNEEPAD_HOME` elsewhere may inherit Users or Everyone). Administrators and SYSTEM can always read the key, as on any Windows machine. The check is not repeated on every hook call, so an ACL loosened later is noticed by `doctor` or the next `init`, not immediately. If `icacls` is unavailable or the ACL cannot be read, `doctor` says unknown and nothing is changed.
 13. **Heuristic false positives exist.** If a rule gets in your way, `disable_rules` in your user config turns it off (except `no_override` rules), and an issue with the command that tripped it is a welcome contribution.
+14. **Self-removal prompts cover the common spellings only.** Known misses: `python3 -Im kneepad uninstall`, `pip --python PATH uninstall kneepad`, `pip uninstall -r FILE`, names piped through `xargs`, and deleting the virtualenv (`rm -rf .venv`). A determined agent can always remove a tool it can run commands against; the prompt exists to make that a decision you see.
 
 ## Failure behaviour
 
@@ -46,4 +47,4 @@ Kneepad is built for one failure: a well-meaning agent (or a tired human) runnin
 
 ## "0 bugs"
 
-No one can honestly promise that. What exists instead: 441 automated tests, an example-driven rule database that cannot drift from its documentation, byte-level tamper fuzzing, randomized input fuzzing for crashes and slowness, and the explicit limits above. During development the test suite found and fixed real defects, including an audit-rotation crash, a pipeline walk-back miss in `curl | tee | sh`, and several rule false positives. More will turn up in real use.
+No one can honestly promise that. What exists instead: 465 automated tests, an example-driven rule database that cannot drift from its documentation, byte-level tamper fuzzing, randomized input fuzzing for crashes and slowness, and the explicit limits above. During development the test suite found and fixed real defects, including an audit-rotation crash, a pipeline walk-back miss in `curl | tee | sh`, and several rule false positives. More will turn up in real use.

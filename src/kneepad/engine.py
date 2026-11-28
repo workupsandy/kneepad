@@ -14,6 +14,7 @@ Design rules:
 
 from __future__ import annotations
 
+import dataclasses
 import fnmatch
 import glob
 import ntpath
@@ -23,7 +24,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from . import sqlscan, winshell
+from . import braces, sqlscan, winshell
 from .argvtools import INTERPRETERS, SHELLS, ParsedArgv, cmd_name, parse_argv, strip_wrappers
 from .config import Config, stronger
 from .rules import ACTION_RANK, Rule, load_default_rules, match_argv, REGEX_INPUT_CAP
@@ -162,6 +163,20 @@ class Decision:
         if self.action == "deny":
             lines.append("Blocked. If you are sure, run it yourself in a terminal. Do not retry or disguise the command.")
         return "\n".join(lines)
+
+
+def _is_dry_run(pa: ParsedArgv) -> bool:
+    """Commands whose own dry-run flag guarantees nothing is changed."""
+    if pa.name == "git" and pa.pos[:1] == ["push"]:
+        return bool({"--dry-run", "-n"} & pa.flags)
+    if pa.name == "helm" and pa.pos[:1] in (["uninstall"], ["delete"], ["un"], ["rollback"]):
+        return "--dry-run" in pa.flags
+    if pa.name == "aws":
+        if pa.pos[:1] == ["s3"] and pa.pos[1:2] in (["rm"], ["mv"], ["sync"], ["cp"]):
+            return "--dryrun" in pa.flags
+        if pa.pos[:1] == ["ec2"]:
+            return "--dry-run" in pa.flags
+    return False
 
 
 class Analyzer:
@@ -315,10 +330,14 @@ class Analyzer:
             self.emit("analysis-limit-exceeded", f"nesting deeper than {MAX_DEPTH}")
             return
         cmds = parse(src)
-        for idx in range(len(cmds)):
-            self._cmd(cmds, idx, depth)
-        for sub in iter_nested(cmds):
-            self._walk(sub, depth + 1)
+        saved_cwd = self.cwd
+        try:
+            for idx in range(len(cmds)):
+                self._cmd(cmds, idx, depth)
+            for sub in iter_nested(cmds):
+                self._walk(sub, depth + 1)
+        finally:
+            self.cwd = saved_cwd
         winshell.analyze(self, src, depth)
 
     def _cmd(self, cmds: List[Cmd], idx: int, depth: int) -> None:
@@ -333,9 +352,15 @@ class Analyzer:
             self._record_assignments(words)
             return
         norm, meta = strip_wrappers(words)
+        if meta.get("nested"):
+            self._walk(meta["nested"], depth + 1)
+            return
         if meta.get("query") or not norm:
             return
         name0 = cmd_name(norm[0].text)
+        if name0 in ("cd", "pushd", "chdir"):
+            self._track_cd(norm[1:])
+            return
         if name0 in ("export", "declare", "local", "readonly", "typeset"):
             self._record_assignments(norm[1:])
             return
@@ -349,11 +374,38 @@ class Analyzer:
             self.emit("analysis-limit-exceeded", f"nesting deeper than {MAX_DEPTH}")
             return
         norm, meta = strip_wrappers(words)
+        if meta.get("nested"):
+            self._walk(meta["nested"], depth + 1)
+            return
         if meta.get("query") or not norm:
             return
         pa = parse_argv(norm, meta)
         if pa is not None:
             self._analyze_pa(pa, None, None, -1, depth)
+
+    def _track_cd(self, args: List[Word]) -> None:
+        """A literal ``cd DIR`` or ``pushd DIR`` moves the directory later relative paths resolve against.
+
+        Without this, ``cd ~ && rm -rf *`` was judged against the directory the agent started in.
+        A dynamic or unknown target (``cd "$X"``, ``cd -``) leaves the directory unchanged.
+        """
+        target = None
+        for w in args:
+            if w.text == "--":
+                continue
+            if w.text.startswith("-") and len(w.text) > 1 and w.text != "-":
+                continue
+            target = w
+            break
+        if target is None:
+            self.cwd = self.home
+            return
+        text, dyn = self._expand_word(target)
+        if dyn or text in ("", "-") or target.glob:
+            return
+        new = self._abs(text)
+        if os.path.isdir(new) or self._classify(new) != "normal":
+            self.cwd = new
 
     def _record_assignments(self, words: List[Word]) -> None:
         for w in words:
@@ -371,6 +423,8 @@ class Analyzer:
         # `tool --help` / `tool --version` as the first argument only prints text for every tool we know.
         # Only the first position is exempt: GNU dd, for one, honours --help solely as argv[1].
         if pa.tokens and pa.tokens[0] in ("--help", "--version") and pa.name not in SHELLS and pa.name not in ("sudo", "env", "xargs", "nohup", "time", "command", "exec"):
+            return
+        if _is_dry_run(pa):
             return
         for r in self._dsl:
             if match_argv(r, pa):
@@ -575,7 +629,7 @@ class Analyzer:
         if pa.meta.get("xargs"):
             self.emit("fs-rm-via-xargs", " ".join([pa.raw0] + pa.tokens)[:160])
         cands: List[str] = []
-        for w in pa.pos_words:
+        for w in self._brace_words(pa.pos_words, recursive):
             text, dyn = self._expand_word(w)
             if dyn:
                 if recursive:
@@ -585,7 +639,7 @@ class Analyzer:
                 continue
             paths = [text]
             if w.glob:
-                pat = text if os.path.isabs(text) else os.path.join(self.cwd, text)
+                pat = os.path.normpath(text if os.path.isabs(text) else os.path.join(self.cwd, text))
                 if recursive and _MATCH_ALL_GLOB.match(os.path.basename(pat)) and self._classify(os.path.dirname(pat) or "/") == "catastrophic":
                     # `rm -rf ~/*`, `rm -rf /home/*`: whatever the glob matches today, the intent is to wipe the directory.
                     self.emit("fs-rm-catastrophic", w.raw or w.text)
@@ -615,6 +669,22 @@ class Analyzer:
                 self.emit("fs-rm-too-large-to-snapshot", ", ".join(need)[:160])
             else:
                 self.emit("fs-rm-snapshot", ", ".join(need)[:160], plan=SnapshotPlan("files", self.cwd, paths=need, est_bytes=b))
+
+    def _brace_words(self, words: List[Word], recursive: bool) -> List[Word]:
+        """Expand unquoted ``{a,b}`` groups the way bash does before ``rm`` sees its arguments."""
+        out: List[Word] = []
+        for w in words:
+            if w.quoted or not braces.has_brace(w.text):
+                out.append(w)
+                continue
+            alts = braces.expand(w.text)
+            if alts is None:
+                if recursive:
+                    self.emit("fs-rm-dynamic-target", f"brace expansion too large: {(w.raw or w.text)[:80]}")
+                continue
+            for a in alts:
+                out.append(dataclasses.replace(w, text=a, raw=a, glob=w.glob or any(c in a for c in "*?[")))
+        return out
 
     def _rm_one(self, p: str, recursive: bool, cands: List[str]) -> None:
         ap = self._abs(p)

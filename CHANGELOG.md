@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.3
+Gaps found by running 0.3.2 against real agent habits, plus a prompt before an agent removes Kneepad itself.
+- Fix: brace expansion in `rm` arguments. `rm -rf ./{src,docs}` and `rm -rf ~/{Documents,Pictures}` passed with no safety copy
+  because the braces were read as one literal name. Kneepad now expands `{a,b}` lists and `{1..3}` sequences the way bash does
+  (nested, with prefixes and suffixes, never inside quotes) and treats each result as its own target. Expansions beyond 512
+  results ask instead of guessing.
+- Fix: `cd` is followed when the target is a literal. `cd ~ && rm -rf *` and `cd / && rm -rf *` were judged against the folder
+  the agent started in, so they passed and the snapshot was of the wrong folder. `cd`, `pushd` and `cd` with no argument now set
+  the folder that later relative paths resolve against. Behaviour change: `cd /opt/app && rm -rf dist` now asks, like
+  `rm -rf /opt/app/dist` always did. Dynamic targets (`cd "$X"`, `cd -`) are still not followed.
+- Fix: `watch`, `flock` and `env -S` are unwrapped, including the string forms `watch 'rm -rf x'`, `flock FILE -c 'rm -rf x'` and
+  `env -S 'rm -rf x'`.
+- Fix: dry runs no longer trigger. `git push --dry-run` and `-n` (even with `--force` to main), `helm uninstall --dry-run`,
+  `helm rollback --dry-run`, `aws s3 rm|mv|sync|cp --dryrun` and `aws ec2 ... --dry-run` are allowed. The exemption is limited to
+  commands that really honour the flag: `aws s3 rb --dryrun` is still stopped because `rb` has no dry-run mode.
+- New: an agent now gets a prompt before it removes Kneepad. Four rules (family `kneepad`): `kneepad uninstall`, package removal
+  through pip, pipx, uv, poetry or conda, the same through `python -m`, and deleting or moving `~/.kneepad`. This is a prompt for the
+  common forms, not a lock; known misses are listed in docs/THREAT_MODEL.md.
+- Rule count 249 to 253 (216 to 220 pattern rules). 465 tests (459 run on Linux, 6 skipped by design).
+- Hygiene: `src/kneepad.egg-info` is no longer tracked (it was already in `.gitignore`).
+
 ## 0.3.2
 Closes the three gaps that 0.3.1 listed.
 - Windows: the audit key and the state directory are now checked and, if needed, tightened. Kneepad reads the ACL with `icacls`
@@ -7,11 +28,16 @@ Closes the three gaps that 0.3.1 listed.
   If anybody besides you, SYSTEM and Administrators can reach them (for example a `KNEEPAD_HOME` that inherits Users or Everyone
   access) it removes that access; `doctor` reports private, exposed (and to whom) or unknown. Nothing runs on the hook path.
   New module `kneepad.winacl`.
+- Fix (Windows): `kneepad rules list | head -1` and other commands whose reader closes the pipe early printed
+  `kneepad: error: [Errno 22] Invalid argument`. Windows reports a closed pipe as errno 22, which is now treated like EPIPE:
+  silent, exit status 0.
 - Tests: ported tests that used to be skipped on Windows. The `kneepad shell` Windows branch (child process, exit code passed through)
   and the POSIX `exec` branch are both tested on every platform; the init round trip runs for every target that can be installed
   on the platform; the broken-pipe test no longer needs POSIX pipes; the POSIX mode-bit tests have Windows ACL counterparts.
   Still skipped on Windows by design: the macOS path simulation (macOS jobs run it), Cline hooks (not supported on Windows) and the
   Cline script executable bit.
+- QA harness: the append-cost check (SCL-002) now compares the first and last 300 appends of the same run, which is what
+  "does not degrade with log size" means, with an absolute ceiling of 20 ms (60 ms on Windows).
 - CI: GitHub Actions moved to current majors (`checkout`, `setup-python`, `upload-artifact` v7, all running on Node 24), which clears
   the Node.js 20 deprecation warning.
 

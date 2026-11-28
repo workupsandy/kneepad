@@ -40,6 +40,8 @@ _WRAPPERS: Dict[str, Tuple[Set[str], int]] = {
     "npx": ({"-p", "--package", "-c", "--call"}, 0),
     "pnpx": (set(), 0),
     "bunx": (set(), 0),
+    "watch": ({"-n", "--interval"}, 0),
+    "flock": ({"-w", "--timeout", "--wait", "-E", "--conflict-exit-code"}, 1),
     "busybox": (set(), 0),
     "toybox": (set(), 0),
 }
@@ -179,7 +181,17 @@ def strip_wrappers(words: List[Word]) -> Tuple[List[Word], dict]:
                     continue
                 if tt.startswith("-") and len(tt) > 1:
                     i += 1
-                    if tt in ("-u", "--unset", "-C", "--chdir", "-S", "--split-string") and i < n:
+                    if tt in ("-S", "--split-string") and i < n:
+                        # env -S 'rm -rf x' splits one string into a command line.
+                        meta["nested"] = " ".join(w.text for w in words[i:])
+                        return [], meta
+                    if tt.startswith("--split-string="):
+                        meta["nested"] = " ".join([tt.split("=", 1)[1]] + [w.text for w in words[i:]])
+                        return [], meta
+                    if tt.startswith("-S") and len(tt) > 2 and not tt.startswith("--"):
+                        meta["nested"] = " ".join([tt[2:]] + [w.text for w in words[i:]])
+                        return [], meta
+                    if tt in ("-u", "--unset", "-C", "--chdir") and i < n:
                         i += 1
                     continue
                 break
@@ -209,6 +221,14 @@ def strip_wrappers(words: List[Word]) -> Tuple[List[Word], dict]:
                 continue
             break
         i += npos
+        if name == "flock" and i + 1 < n and words[i].text in ("-c", "--command"):
+            # flock FILE -c 'cmd args': the string runs through a shell.
+            meta["nested"] = words[i + 1].text
+            return [], meta
+        if name == "watch" and n - i == 1 and re.search(r"\s", words[i].text):
+            # watch 'cmd args' hands the string to sh -c. Several words are joined by watch the same way.
+            meta["nested"] = words[i].text
+            return [], meta
         if name in ("sudo", "doas"):
             meta["sudo"] = True
         if name == "xargs":
